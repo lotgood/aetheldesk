@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AethelDesk</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400&display=swap" rel="stylesheet" />
+  <style>
+    * { font-family: 'Inter', sans-serif; }
+    body { overflow: hidden; }
+    ::placeholder { color: currentColor; opacity: 0.25; }
+    #code-section {
+      max-height: 0; opacity: 0; overflow: hidden; pointer-events: none;
+      transition: max-height 0.4s ease, opacity 0.4s ease;
+    }
+  </style>
+</head>
+<body class="w-screen h-screen flex items-center justify-center select-none">
+
+  <!-- Stars -->
+  <canvas id="stars" class="absolute inset-0 w-full h-full" style="opacity:0;pointer-events:none;transition:opacity 2s ease;"></canvas>
+
+  <!-- Clouds (day only) -->
+  <canvas id="clouds" class="absolute inset-0 w-full h-full" style="pointer-events:none;opacity:0;transition:opacity 2s ease;"></canvas>
+
+  <!-- Sun / Moon arc -->
+  <svg class="absolute inset-0 w-full h-full" style="pointer-events:none;">
+    <defs>
+      <radialGradient id="moonGradL" cx="42%" cy="42%" r="50%">
+        <stop offset="0%"   stop-color="#F0F4FF"/>
+        <stop offset="60%"  stop-color="#D0D8F0"/>
+        <stop offset="100%" stop-color="#A8B8D8"/>
+      </radialGradient>
+    </defs>
+    <path id="arc-path" fill="none" stroke-width="0.5" opacity="0.15" />
+    <g id="sun-group" style="transform:translate(-200px,-200px);opacity:0;transition:opacity 1.5s ease;">
+      <circle cx="0" cy="0" r="55" fill="#FFB200" opacity="0.12"/>
+      <circle cx="0" cy="0" r="36" fill="#FFCC00" opacity="0.25"/>
+      <circle cx="0" cy="0" r="22" fill="#FFE566" opacity="0.55"/>
+      <circle cx="0" cy="0" r="16" fill="#FFFBE8" opacity="0.95"/>
+    </g>
+    <g id="moon-group" style="transform:translate(-200px,-200px);opacity:1;transition:opacity 1.5s ease;">
+      <circle cx="0" cy="0" r="13" fill="url(#moonGradL)"/>
+      <circle cx="5" cy="-2" r="11" fill="#0B091A" opacity="0.90"/>
+    </g>
+  </svg>
+
+  <!-- Content — inherits color from body so day/night tint applies automatically -->
+  <div class="relative z-10 flex flex-col items-center gap-6">
+
+    <h1 class="text-xs tracking-[0.5em] uppercase font-light" style="opacity:0.35">AethelDesk</h1>
+
+    <button id="btn-start"
+      class="font-light tracking-[0.5em] text-xs uppercase px-10 py-4 hover:opacity-100 transition-opacity duration-300"
+      style="opacity:0.6">
+      시작
+    </button>
+
+    <button id="code-toggle"
+      class="text-xs font-light tracking-widest hover:opacity-60 transition-opacity duration-300"
+      style="opacity:0.25">
+      방 코드로 입장 →
+    </button>
+
+    <div id="code-section">
+      <div class="flex flex-col items-center gap-3 pt-3">
+        <input id="room-input" type="text" maxlength="8" placeholder="방 코드"
+          class="bg-transparent text-center text-xl font-extralight tracking-[0.3em] uppercase outline-none w-40 pb-2"
+          style="border-bottom: 1px solid currentColor; opacity: 0.9;" />
+        <button id="btn-join"
+          class="text-xs tracking-[0.3em] uppercase font-light hover:opacity-100 transition-opacity duration-300"
+          style="opacity:0.4">
+          입장
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ── Sky animation ──────────────────────────────────────────────────────────
+    const CYCLE_MS = 40000; // 40 s per full day cycle
+
+    // Gradient keyframes: t = 0→1 = midnight→midnight
+    const KF = [
+      { t: 0.00, top: "#0A0A14", bot: "#1A0A2E", dayF: 0 },
+      { t: 0.18, top: "#1A0A2E", bot: "#2C1654", dayF: 0 },
+      { t: 0.28, top: "#2C1654", bot: "#FF6B35", dayF: 0 },
+      { t: 0.36, top: "#FFB347", bot: "#FF6B35", dayF: 1 },
+      { t: 0.50, top: "#B8DFFF", bot: "#7ABFDC", dayF: 1 },
+      { t: 0.64, top: "#FFB347", bot: "#FF6B35", dayF: 1 },
+      { t: 0.72, top: "#2C1654", bot: "#FF6B35", dayF: 0 },
+      { t: 0.82, top: "#1A0A2E", bot: "#2C1654", dayF: 0 },
+      { t: 1.00, top: "#0A0A14", bot: "#1A0A2E", dayF: 0 },
+    ];
+
+    function hexRgb(h) {
+      const n = parseInt(h.slice(1), 16);
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    }
+    function lerpN(a, b, t) { return a + (b - a) * t; }
+    function lerpHex(h1, h2, t) {
+      const [r1,g1,b1] = hexRgb(h1), [r2,g2,b2] = hexRgb(h2);
+      return `rgb(${Math.round(lerpN(r1,r2,t))},${Math.round(lerpN(g1,g2,t))},${Math.round(lerpN(b1,b2,t))})`;
+    }
+
+    function skyAt(t) {
+      for (let i = 0; i < KF.length - 1; i++) {
+        const a = KF[i], b = KF[i + 1];
+        if (t >= a.t && t <= b.t) {
+          const f = (t - a.t) / (b.t - a.t);
+          return {
+            top:  lerpHex(a.top,  b.top,  f),
+            bot:  lerpHex(a.bot,  b.bot,  f),
+            dayF: lerpN(a.dayF, b.dayF, f),
+          };
+        }
+      }
+      return { top: "#0A0A14", bot: "#1A0A2E", dayF: 0 };
+    }
+
+    // Stars drawn once
+    let starsReady = false;
+    function ensureStars() {
+      if (starsReady) return;
+      starsReady = true;
+      const c = document.getElementById("stars");
+      c.width = window.innerWidth; c.height = window.innerHeight;
+      const ctx = c.getContext("2d");
+      for (let i = 0; i < 180; i++) {
+        ctx.beginPath();
+        ctx.arc(Math.random() * c.width, Math.random() * c.height * 0.75,
+                Math.random() * 1.2 + 0.3, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.6 + 0.2})`;
+        ctx.fill();
+      }
+    }
+
+    function updateArc(arcPct, dayF) {
+      const W = window.innerWidth, H = window.innerHeight;
+      const rx = W * 0.42, ry = H * 0.55, cx = W / 2, cy = H * 0.88;
+      document.getElementById("arc-path").setAttribute("d",
+        `M ${cx - rx} ${cy} A ${rx} ${ry} 0 0 1 ${cx + rx} ${cy}`);
+      const angle = Math.PI - arcPct * Math.PI;
+      const x = cx + rx * Math.cos(angle);
+      const y = cy - ry * Math.sin(angle);
+      const sg = document.getElementById("sun-group");
+      const mg = document.getElementById("moon-group");
+      sg.style.transform = `translate(${x}px,${y}px)`;
+      mg.style.transform = `translate(${x}px,${y}px)`;
+      // Smooth crossfade: sun rises from dayF 0.15→0.50, moon fades out inversely
+      const sunOpacity  = Math.max(0, Math.min(1, (dayF - 0.15) / 0.35));
+      const moonOpacity = Math.max(0, Math.min(1, (0.50 - dayF) / 0.35));
+      sg.style.opacity = String(sunOpacity);
+      mg.style.opacity = String(moonOpacity);
+      document.getElementById("arc-path").setAttribute("stroke",
+        dayF > 0.5 ? "rgba(15,30,50,0.15)" : "rgba(255,255,255,0.15)");
+      // Clouds visible during day
+      document.getElementById("clouds").style.opacity = String(sunOpacity * 0.75);
+    }
+
+    // Text color: dark navy during day (legible on both blue and warm sky), white at night
+    const DAY_COLOR  = [15, 30, 50];
+    const NIGHT_COLOR = [255, 255, 255];
+
+    let startTime = null;
+    function frame(now) {
+      if (!startTime) startTime = now;
+      const t = ((now - startTime) % CYCLE_MS) / CYCLE_MS;
+      const sky = skyAt(t);
+
+      document.body.style.background =
+        `linear-gradient(to bottom, ${sky.top}, ${sky.bot})`;
+
+      // Blend text color between night-white and day-dark
+      const c = NIGHT_COLOR.map((n, i) => Math.round(lerpN(n, DAY_COLOR[i], sky.dayF)));
+      document.body.style.color = `rgb(${c.join(",")})`;
+
+      // Stars: visible at night
+      const stars = document.getElementById("stars");
+      const nightF = Math.max(0, 1 - sky.dayF);
+      if (nightF > 0.05) { ensureStars(); stars.style.opacity = String(nightF * 0.85); }
+      else { stars.style.opacity = "0"; }
+
+      updateArc(t, sky.dayF);
+      tickClouds(sky.dayF);
+
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+
+    // ── Clouds ──────────────────────────────────────────────────────────────────
+    let lobbyCloudState = null;
+
+    function initLobbyClouds() {
+      const c = document.getElementById("clouds");
+      c.width = window.innerWidth; c.height = window.innerHeight;
+      lobbyCloudState = Array.from({ length: 5 }, (_, i) => ({
+        x: Math.random() * c.width,
+        y: c.height * (0.06 + i * 0.055 + Math.random() * 0.03),
+        w: 110 + Math.random() * 90,
+        h: 28 + Math.random() * 18,
+        speed: 0.07 + Math.random() * 0.11,
+      }));
+    }
+
+    function tickClouds(dayF) {
+      const canvas = document.getElementById("clouds");
+      if (dayF < 0.18) return; // skip drawing during deep night
+      if (!lobbyCloudState) initLobbyClouds();
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "rgba(255,255,255,0.68)";
+      for (const cl of lobbyCloudState) {
+        cl.x += cl.speed;
+        if (cl.x - cl.w > canvas.width) cl.x = -cl.w;
+        ctx.beginPath(); ctx.ellipse(cl.x,              cl.y,              cl.w * 0.50, cl.h * 0.50, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(cl.x - cl.w * 0.28, cl.y + cl.h * 0.10, cl.w * 0.28, cl.h * 0.38, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(cl.x + cl.w * 0.28, cl.y + cl.h * 0.10, cl.w * 0.32, cl.h * 0.42, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(cl.x,              cl.y - cl.h * 0.30, cl.w * 0.30, cl.h * 0.40, 0, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    // ── Navigation ─────────────────────────────────────────────────────────────
+    function randCode() { return Math.random().toString(36).slice(2, 6).toUpperCase(); }
+    function go(code) { if (code) location.href = `/room/${code.toUpperCase()}`; }
+
+    document.getElementById("btn-start").addEventListener("click", () => go(randCode()));
+    document.getElementById("btn-join").addEventListener("click", () =>
+      go(document.getElementById("room-input").value.trim()));
+
+    let codeOpen = false;
+    document.getElementById("code-toggle").addEventListener("click", () => {
+      codeOpen = !codeOpen;
+      const s = document.getElementById("code-section");
+      s.style.maxHeight    = codeOpen ? "120px" : "0";
+      s.style.opacity      = codeOpen ? "1"     : "0";
+      s.style.pointerEvents = codeOpen ? "auto" : "none";
+      if (codeOpen) setTimeout(() => document.getElementById("room-input").focus(), 380);
+    });
+
+    document.getElementById("room-input").addEventListener("keydown", e => {
+      if (e.key === "Enter") go(document.getElementById("room-input").value.trim());
+    });
+  </script>
+</body>
+</html>

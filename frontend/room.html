@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AethelDesk</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital,wght@0,400;1,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    /* ──────────────────────────────────────────────────────────────
+       AethelDesk · Room
+       System:  Velorah — pure black, Instrument Serif display,
+                Inter body, liquid glass with gradient-edge borders.
+       ────────────────────────────────────────────────────────────── */
+
+    :root {
+      /* Tokens (HSL — adapted from Velorah, dark-only). */
+      --background:         0 0% 0%;
+      --foreground:         0 0% 100%;
+      --card:               0 0% 6%;
+      --card-foreground:    0 0% 100%;
+      --primary:            0 0% 100%;
+      --primary-foreground: 0 0% 4%;
+      --muted:              0 0% 10%;
+      --muted-foreground:   240 4% 66%;
+      --border:             0 0% 18%;
+      --ring:               0 0% 100%;
+      --radius:             0.5rem;
+
+      --font-display: 'Instrument Serif', 'Times New Roman', serif;
+      --font-body:    'Inter', system-ui, sans-serif;
+
+      --ease:      cubic-bezier(.32,.72,.32,1);
+      --ease-slow: cubic-bezier(.5,.05,.2,1);
+    }
+
+    * { font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
+    .font-display { font-family: var(--font-display); font-weight: 400; }
+
+    /* Registered custom props so the sky gradient can transition. */
+    @property --sky-top { syntax: '<color>'; inherits: true; initial-value: #000000; }
+    @property --sky-bot { syntax: '<color>'; inherits: true; initial-value: #060608; }
+
+    /* The page itself is pure black. The dynamic sky gradient lives on
+       a fixed ::before layer so it can transition independently and so
+       liquid-glass surfaces blur against a real layer underneath. */
+    body {
+      background: transparent;
+      color: hsl(var(--foreground));
+      transition: color 1.4s ease;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -2;
+      background: linear-gradient(to bottom, var(--sky-top), var(--sky-bot));
+      transition: --sky-top 0.6s ease, --sky-bot 0.6s ease;
+      pointer-events: none;
+    }
+
+    /* ──────────────────────────────────────────────────────────────
+       Liquid Glass — verbatim from the Velorah system.
+       Mild blur, ~1% white tint, gradient-border drawn with mask-xor.
+       ────────────────────────────────────────────────────────────── */
+    .liquid-glass {
+      position: relative;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.01);
+      background-blend-mode: luminosity;
+      backdrop-filter: blur(4px) saturate(140%);
+      -webkit-backdrop-filter: blur(4px) saturate(140%);
+      border: none;
+      box-shadow:
+        inset 0 1px 1px rgba(255,255,255,0.10),
+        0 20px 60px -30px rgba(0,0,0,0.7);
+    }
+    .liquid-glass::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      padding: 1.4px;
+      border-radius: inherit;
+      background: linear-gradient(180deg,
+        rgba(255,255,255,0.45) 0%,
+        rgba(255,255,255,0.15) 20%,
+        rgba(255,255,255,0)    40%,
+        rgba(255,255,255,0)    60%,
+        rgba(255,255,255,0.15) 80%,
+        rgba(255,255,255,0.45) 100%);
+      -webkit-mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+              mask-composite: exclude;
+      pointer-events: none;
+    }
+    /* Stronger edge highlight on hover — the glass "lights up". */
+    .liquid-glass.interactive { transition: transform .6s var(--ease); }
+    .liquid-glass.interactive:hover::before {
+      background: linear-gradient(180deg,
+        rgba(255,255,255,0.65) 0%,
+        rgba(255,255,255,0.22) 20%,
+        rgba(255,255,255,0.04) 40%,
+        rgba(255,255,255,0.04) 60%,
+        rgba(255,255,255,0.22) 80%,
+        rgba(255,255,255,0.65) 100%);
+      transition: background .6s var(--ease);
+    }
+
+    /* ──────────────────────────────────────────────────────────────
+       Fade-rise entry — from the Velorah animation set, staggered.
+       ────────────────────────────────────────────────────────────── */
+    @keyframes fade-rise {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-rise         { animation: fade-rise 0.9s var(--ease) both; }
+    .animate-fade-rise-delay   { animation: fade-rise 0.9s var(--ease) 0.20s both; }
+    .animate-fade-rise-delay-2 { animation: fade-rise 0.9s var(--ease) 0.40s both; }
+    .animate-fade-rise-delay-3 { animation: fade-rise 0.9s var(--ease) 0.60s both; }
+
+    /* ──────────────────────────────────────────────────────────────
+       Scene + canvas transitions (kept exactly as the JS expects).
+       ────────────────────────────────────────────────────────────── */
+    #stars { transition: opacity 1.4s ease; pointer-events: none; }
+    #controls  { transition: opacity 0.5s ease; }
+    #pomodoro  { transition: opacity 0.7s ease; }
+    #pom-time  { transition: opacity 0.4s ease; }
+    #break-row, #focus-row { transition: opacity 0.5s ease; }
+    #dur-chips { transition: opacity 0.5s ease; }
+    #sun-group, #moon-group { transition: transform 1.4s ease, opacity 1.4s ease; }
+    #sat-group { transition: transform 1.4s ease, opacity 0.8s ease; }
+    #sat-rot   { transition: transform 1s linear; }
+
+    /* Sun corona / moon halo: slow breath, pure decoration. */
+    @keyframes orb-breathe {
+      0%, 100% { transform: scale(1);     opacity: var(--orb-opacity, 0.55); }
+      50%      { transform: scale(1.08);  opacity: calc(var(--orb-opacity, 0.55) + 0.30); }
+    }
+    .sun-corona { animation: orb-breathe 8s var(--ease-slow) infinite; transform-box: fill-box; transform-origin: center; }
+    .sun-bloom  { animation: orb-breathe 6s var(--ease-slow) infinite; transform-box: fill-box; transform-origin: center; --orb-opacity: 0.85; }
+    .moon-halo  { animation: orb-breathe 10s var(--ease-slow) infinite; transform-box: fill-box; transform-origin: center; --orb-opacity: 0.55; }
+
+    /* ──────────────────────────────────────────────────────────────
+       Typography
+       ────────────────────────────────────────────────────────────── */
+
+    /* Timer: serif, ultra-large, soft luminous shadow. */
+    #pom-time {
+      font-family: var(--font-display);
+      font-weight: 400;
+      font-size: clamp(7.5rem, 16vw, 14rem);
+      line-height: 0.92;
+      letter-spacing: -0.025em;
+      font-variant-numeric: tabular-nums lining-nums;
+      text-shadow: 0 0 60px rgba(255,255,255,0.10), 0 4px 24px rgba(0,0,0,0.30);
+      color: hsl(var(--foreground));
+    }
+
+    /* Tiny labels — Inter, wide-tracked uppercase, muted. */
+    .ui-label {
+      font-family: var(--font-body);
+      font-size: 10px;
+      font-weight: 400;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: hsl(var(--muted-foreground));
+    }
+
+    /* Numbers — Inter with tabular figures (clock, slider numerals). */
+    .ui-num {
+      font-family: var(--font-body);
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.05em;
+    }
+
+    /* ──────────────────────────────────────────────────────────────
+       HUD chips
+       ────────────────────────────────────────────────────────────── */
+    .hud-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.7rem;
+      padding: 0.45rem 0.85rem;
+      border-radius: 999px;
+    }
+
+    /* ──────────────────────────────────────────────────────────────
+       Focus button — Instrument Serif italic, framed in liquid glass
+       ────────────────────────────────────────────────────────────── */
+    .focus-btn {
+      position: relative;
+      padding: 1.05rem 2.75rem 1.15rem;
+      border-radius: 999px;
+      font-family: var(--font-display);
+      font-style: italic;
+      font-weight: 400;
+      font-size: 28px;
+      letter-spacing: 0.005em;
+      color: hsl(var(--foreground));
+      transition: transform .8s var(--ease), color .6s ease;
+      cursor: pointer;
+      isolation: isolate;
+    }
+    .focus-btn:hover { transform: translateY(-1px); }
+    .focus-btn:active { transform: translateY(0); }
+
+    /* Slow breathing halo behind the focus button. */
+    .focus-btn::after {
+      content: "";
+      position: absolute; inset: -28px;
+      border-radius: 999px;
+      background: radial-gradient(closest-side, rgba(255,255,255,0.10), rgba(255,255,255,0) 70%);
+      animation: focus-breathe 6s var(--ease-slow) infinite;
+      pointer-events: none;
+      z-index: -1;
+    }
+    @keyframes focus-breathe {
+      0%, 100% { opacity: 0.4; transform: scale(1); }
+      50%      { opacity: 0.85; transform: scale(1.05); }
+    }
+
+    /* ──────────────────────────────────────────────────────────────
+       Duration segmented control
+       ────────────────────────────────────────────────────────────── */
+    .dur-segment {
+      position: relative;
+      padding: 0.55rem 1.25rem;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 400;
+      letter-spacing: 0.32em;
+      text-transform: uppercase;
+      color: hsl(var(--muted-foreground));
+      transition: color .5s ease, background .5s ease;
+    }
+    .dur-segment:hover { color: hsl(var(--foreground)); }
+    .dur-segment[data-active="true"] {
+      color: hsl(var(--primary-foreground));
+      background: hsl(var(--primary));
+    }
+
+    /* ──────────────────────────────────────────────────────────────
+       Active-session controls
+       ────────────────────────────────────────────────────────────── */
+    .pom-ctl {
+      font-size: 10.5px;
+      letter-spacing: 0.34em;
+      text-transform: uppercase;
+      font-weight: 400;
+      color: hsl(var(--muted-foreground));
+      padding: 0.55rem 1rem;
+      border-radius: 999px;
+      transition: color .5s ease, background .5s ease;
+    }
+    .pom-ctl:hover { color: hsl(var(--foreground)); background: rgba(255,255,255,0.04); }
+
+    /* ──────────────────────────────────────────────────────────────
+       Music + ··· controls
+       ────────────────────────────────────────────────────────────── */
+    .ctrl-bar {
+      display: inline-flex;
+      align-items: center;
+      gap: 1.5rem;
+      padding: 0.65rem 1.4rem;
+      border-radius: 999px;
+    }
+    .ctrl-btn {
+      position: relative;
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      font-size: 11px;
+      letter-spacing: 0.30em;
+      text-transform: uppercase;
+      font-weight: 400;
+      color: rgba(255,255,255,0.78);
+      padding: 0.35rem 0.2rem;
+      transition: color .4s ease, letter-spacing .6s var(--ease);
+    }
+    .ctrl-btn:hover { color: hsl(var(--foreground)); }
+
+    /* ··· glyph — three small dots */
+    .ctrl-btn .dot-dot-dot { display: inline-flex; gap: 3px; align-items: center; }
+    .ctrl-btn .dot-dot-dot i {
+      width: 3px; height: 3px; border-radius: 999px;
+      background: currentColor; display: inline-block;
+      transition: transform .5s var(--ease);
+    }
+    .ctrl-btn:hover .dot-dot-dot i:nth-child(1) { transform: translateY(-1px); }
+    .ctrl-btn:hover .dot-dot-dot i:nth-child(3) { transform: translateY(1px); }
+
+    .ctrl-sep {
+      width: 1px; height: 14px;
+      background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.20), transparent);
+    }
+
+    /* ──────────────────────────────────────────────────────────────
+       More panel — slides up above the bar
+       ────────────────────────────────────────────────────────────── */
+    #more-panel {
+      max-height: 0;
+      opacity: 0;
+      overflow: hidden;
+      pointer-events: none;
+      transform: translateY(8px);
+      transition: max-height 0.5s var(--ease), opacity 0.5s var(--ease),
+                  transform 0.6s var(--ease);
+    }
+    /* Non-zero inline max-height (set by JS) opens the panel. */
+    #more-panel[style*="max-height"]:not([style*="max-height: 0"]):not([style*="max-height:0"]) {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0);
+    }
+    .more-inner {
+      margin-bottom: 0.7rem;
+      padding: 0.6rem 1.4rem;
+      border-radius: 999px;
+    }
+
+    #track-input {
+      user-select: text; -webkit-user-select: text;
+      font-family: var(--font-body);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      color: hsl(var(--foreground));
+      border-color: rgba(255,255,255,0.22) !important;
+    }
+    #track-input::placeholder { color: rgba(255,255,255,0.40); }
+    #track-modal { transition: opacity 0.2s ease; }
+
+    /* ──────────────────────────────────────────────────────────────
+       Time dial slider
+       ────────────────────────────────────────────────────────────── */
+    input[type=range] {
+      -webkit-appearance: none; appearance: none;
+      background: transparent; width: 100%;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      background: hsl(var(--foreground));
+      cursor: grab;
+      margin-top: -5px;
+      box-shadow:
+        0 0 0 1px rgba(0,0,0,0.30),
+        0 0 14px rgba(255,255,255,0.45),
+        0 2px 6px rgba(0,0,0,0.4);
+      transition: transform .25s var(--ease);
+    }
+    input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.15); }
+    input[type=range]:active::-webkit-slider-thumb { cursor: grabbing; transform: scale(1.25); }
+    input[type=range]::-webkit-slider-runnable-track {
+      height: 2px;
+      background: rgba(255,255,255,0.20);
+      border-radius: 1px;
+    }
+    input[type=range]::-moz-range-thumb {
+      width: 12px; height: 12px; border-radius: 50%;
+      background: hsl(var(--foreground)); border: none; cursor: grab;
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.30), 0 0 14px rgba(255,255,255,0.45);
+    }
+    input[type=range]::-moz-range-track {
+      height: 2px; background: rgba(255,255,255,0.20); border-radius: 1px;
+    }
+
+    /* ──────────────────────────────────────────────────────────────
+       Connection dot — gentle breathing pulse
+       ────────────────────────────────────────────────────────────── */
+    #conn-dot {
+      box-shadow: 0 0 8px currentColor;
+      animation: conn-pulse 3.6s var(--ease-slow) infinite;
+    }
+    @keyframes conn-pulse {
+      0%, 100% { opacity: 0.35; transform: scale(1);    }
+      50%      { opacity: 0.9;  transform: scale(1.15); }
+    }
+
+    /* ──────────────────────────────────────────────────────────────
+       Day-mode legibility (preserved logic from original)
+       ────────────────────────────────────────────────────────────── */
+    body.day { color: rgba(15, 30, 50, 0.85); }
+    body.day [class*="text-white"] { color: rgba(15, 30, 50, 0.85) !important; }
+    body.day #arc-path { stroke: rgba(15, 30, 50, 0.15) !important; }
+    body.day .ui-label,
+    body.day .dur-segment,
+    body.day .pom-ctl,
+    body.day .ctrl-btn  { color: rgba(15, 25, 45, 0.7); }
+    body.day .ctrl-btn:hover,
+    body.day .pom-ctl:hover,
+    body.day .dur-segment:hover { color: rgba(15, 25, 45, 1); }
+    body.day .dur-segment[data-active="true"] {
+      color: rgba(15, 25, 45, 1);
+      background: rgba(15, 25, 45, 0.08);
+    }
+    body.day .focus-btn { color: rgba(15, 25, 45, 0.95); }
+    body.day #pom-time  {
+      color: rgba(15, 25, 45, 0.95);
+      text-shadow: 0 1px 20px rgba(255,255,255,0.55);
+    }
+    body.day input[type=range]::-webkit-slider-thumb { background: rgba(15,25,45,0.95); box-shadow: 0 0 0 1px rgba(255,255,255,0.5), 0 2px 6px rgba(0,0,0,0.15); }
+    body.day input[type=range]::-webkit-slider-runnable-track { background: rgba(15,25,45,0.22); }
+
+    body[data-scene="city"].day,
+    body[data-scene="forest"].day {
+      color: white !important;
+      text-shadow: 0 1px 5px rgba(0,0,0,0.60), 0 0 14px rgba(0,0,0,0.40);
+    }
+    body[data-scene="city"].day [class*="text-white"],
+    body[data-scene="forest"].day [class*="text-white"] { color: white !important; }
+    body[data-scene="city"].day #arc-path,
+    body[data-scene="forest"].day #arc-path { stroke: rgba(255,255,255,0.15) !important; }
+    body[data-scene="city"].day .ui-label,
+    body[data-scene="forest"].day .ui-label,
+    body[data-scene="city"].day .dur-segment,
+    body[data-scene="forest"].day .dur-segment,
+    body[data-scene="city"].day .pom-ctl,
+    body[data-scene="forest"].day .pom-ctl,
+    body[data-scene="city"].day .ctrl-btn,
+    body[data-scene="forest"].day .ctrl-btn { color: rgba(255,255,255,0.78); }
+    body[data-scene="city"].day .focus-btn,
+    body[data-scene="forest"].day .focus-btn { color: white; }
+    body[data-scene="city"].day #pom-time,
+    body[data-scene="forest"].day #pom-time { color: white; text-shadow: 0 0 60px rgba(255,255,255,0.10), 0 4px 24px rgba(0,0,0,0.5); }
+    body[data-scene="city"].day input[type=range]::-webkit-slider-thumb,
+    body[data-scene="forest"].day input[type=range]::-webkit-slider-thumb { background: rgba(255,255,255,0.98); box-shadow: 0 0 0 1px rgba(0,0,0,0.25), 0 0 14px rgba(255,255,255,0.45); }
+    body[data-scene="city"].day input[type=range]::-webkit-slider-runnable-track,
+    body[data-scene="forest"].day input[type=range]::-webkit-slider-runnable-track { background: rgba(255,255,255,0.22); }
+
+    body[data-scene="beach"].day {
+      text-shadow: 0 0 8px rgba(255,255,255,0.65), 0 1px 3px rgba(255,255,255,0.50);
+    }
+
+    /* Music bar: hidden by default, revealed by JS when user adds a track */
+    #music-bar {
+      opacity: 0; pointer-events: none; transform: translateY(6px);
+      transition: opacity .4s ease, transform .4s var(--ease);
+    }
+
+    /* ──────────────────────────────────────────────────────────────
+       Responsive — portrait mobile + landscape mobile
+       ────────────────────────────────────────────────────────────── */
+
+    /* Landscape compact (phone held sideways, max-height ≤ 480 px) */
+    @media (orientation: landscape) and (max-height: 480px) {
+      #hud-tl         { top: 0.65rem !important; left: 0.9rem !important; }
+      #hud-tr         { top: 0.65rem !important; right: 0.9rem !important; }
+      #time-dial      { bottom: 0.65rem !important; left: 0.9rem !important; }
+      #time-dial .liquid-glass { min-width: 0 !important; }
+      #controls       { bottom: 0.65rem !important; gap: 0.35rem !important;
+                        left: auto !important; right: 0.9rem !important;
+                        padding: 0 !important; align-items: flex-end !important; }
+      .ctrl-bar       { gap: 0.75rem !important; padding: 0.5rem 1rem !important; }
+      .ctrl-btn       { font-size: 10px !important; letter-spacing: 0.16em !important; }
+      #center-cluster { gap: 0.8rem !important; }
+      #pom-time       { font-size: clamp(3.2rem, 10vw, 5rem) !important; }
+      #pomodoro       { gap: 0.8rem !important; }
+      .focus-btn      { font-size: 20px !important; padding: 0.72rem 1.8rem 0.82rem !important; }
+    }
+
+    /* Portrait mobile (width ≤ 600 px) */
+    @media (orientation: portrait) and (max-width: 600px) {
+      #hud-tl         { top: 1.1rem !important; left: 1.1rem !important; }
+      #hud-tr         { top: 1.1rem !important; right: 1.1rem !important; }
+      #pom-time       { font-size: clamp(4.5rem, 22vw, 7.5rem) !important; }
+      .focus-btn      { font-size: 24px !important; padding: 0.9rem 2.2rem 1rem !important; }
+      #time-dial      { bottom: 4.8rem !important; left: 1.1rem !important; }
+      #time-dial .liquid-glass { min-width: 0 !important; padding: 0.45rem 0.75rem !important; }
+      .dial-header    { display: none !important; }
+      #controls       { bottom: 1.3rem !important; padding-inline: 0.75rem !important; }
+      .ctrl-bar       { gap: 0.75rem !important; padding: 0.55rem 1rem !important; }
+      .ctrl-btn       { font-size: 10px !important; letter-spacing: 0.15em !important; }
+      .ctrl-sep       { height: 10px !important; }
+    }
+  </style>
+</head>
+<body class="w-screen h-screen overflow-hidden flex items-center justify-center select-none">
+
+  <!-- Stars (night only) -->
+  <canvas id="stars" class="absolute inset-0 w-full h-full opacity-0"></canvas>
+
+  <!-- Clouds (day only) -->
+  <canvas id="clouds" class="absolute inset-0 w-full h-full" style="pointer-events:none;opacity:0;transition:opacity 2s ease;"></canvas>
+
+  <!-- Scene layers (city / beach / forest) sit above sky gradient, below sun/moon SVG -->
+  <canvas id="city-canvas"   class="absolute inset-0 w-full h-full" style="pointer-events:none;opacity:0;transition:opacity 1.5s ease;"></canvas>
+  <canvas id="beach-canvas"  class="absolute inset-0 w-full h-full" style="pointer-events:none;opacity:0;transition:opacity 1.5s ease;"></canvas>
+  <canvas id="forest-canvas" class="absolute inset-0 w-full h-full" style="pointer-events:none;opacity:0;transition:opacity 1.5s ease;"></canvas>
+
+  <!-- Sun / Moon arc -->
+  <svg id="sky" class="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg" style="pointer-events:none;">
+    <defs>
+      <radialGradient id="moonGrad" cx="38%" cy="38%" r="58%">
+        <stop offset="0%"   stop-color="#FBFCFF"/>
+        <stop offset="45%"  stop-color="#E5E9F5"/>
+        <stop offset="78%"  stop-color="#C2CADC"/>
+        <stop offset="100%" stop-color="#8B95B0"/>
+      </radialGradient>
+      <radialGradient id="moonShade" cx="78%" cy="78%" r="62%">
+        <stop offset="0%"   stop-color="rgba(20,18,42,0.35)"/>
+        <stop offset="80%"  stop-color="rgba(20,18,42,0)"/>
+      </radialGradient>
+      <radialGradient id="moonHalo" cx="50%" cy="50%" r="50%">
+        <stop offset="0%"   stop-color="rgba(220,230,255,0.32)"/>
+        <stop offset="40%"  stop-color="rgba(220,230,255,0.08)"/>
+        <stop offset="100%" stop-color="rgba(220,230,255,0)"/>
+      </radialGradient>
+      <radialGradient id="sunCore" cx="50%" cy="50%" r="50%">
+        <stop offset="0%"   stop-color="#FFFFFF"/>
+        <stop offset="40%"  stop-color="#FFF6D0"/>
+        <stop offset="100%" stop-color="#FFD964"/>
+      </radialGradient>
+      <radialGradient id="sunGlow" cx="50%" cy="50%" r="50%">
+        <stop offset="0%"   stop-color="rgba(255,225,120,0.85)"/>
+        <stop offset="55%"  stop-color="rgba(255,180,60,0.35)"/>
+        <stop offset="100%" stop-color="rgba(255,160,40,0)"/>
+      </radialGradient>
+      <radialGradient id="sunCorona" cx="50%" cy="50%" r="50%">
+        <stop offset="0%"   stop-color="rgba(255,210,90,0.20)"/>
+        <stop offset="60%"  stop-color="rgba(255,180,60,0.08)"/>
+        <stop offset="100%" stop-color="rgba(255,140,30,0)"/>
+      </radialGradient>
+      <radialGradient id="crater1" cx="50%" cy="50%" r="50%">
+        <stop offset="0%"   stop-color="rgba(120,128,150,0.55)"/>
+        <stop offset="100%" stop-color="rgba(120,128,150,0)"/>
+      </radialGradient>
+      <radialGradient id="satGlow" cx="50%" cy="50%" r="50%">
+        <stop offset="0%"   stop-color="rgba(255,255,255,1)"/>
+        <stop offset="40%"  stop-color="rgba(255,255,255,0.6)"/>
+        <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+      </radialGradient>
+    </defs>
+
+    <path id="arc-path" fill="none" stroke="white" stroke-width="0.5" opacity="0.15" />
+
+    <!-- ── SUN ─────────────────────────────────────────────── -->
+    <g id="sun-group" style="transform:translate(-200px,-200px);opacity:0;">
+      <g class="sun-corona">
+        <circle cx="0" cy="0" r="180" fill="url(#sunCorona)" opacity="0.55"/>
+        <circle cx="0" cy="0" r="110" fill="url(#sunCorona)" opacity="0.75"/>
+      </g>
+      <g class="sun-bloom">
+        <circle cx="0" cy="0" r="72" fill="url(#sunGlow)" opacity="0.85"/>
+        <circle cx="0" cy="0" r="48" fill="url(#sunGlow)" opacity="0.95"/>
+      </g>
+      <circle cx="0" cy="0" r="28" fill="url(#sunCore)"/>
+      <circle cx="0" cy="0" r="22" fill="#FFFBE8" opacity="0.95"/>
+      <g opacity="0.16" stroke="rgba(255,240,180,0.9)" stroke-width="1" stroke-linecap="round">
+        <line x1="-86" y1="0" x2="86" y2="0"/>
+        <line x1="0" y1="-86" x2="0" y2="86"/>
+      </g>
+    </g>
+
+    <!-- ── SESSION SATELLITE ───────────────────────────────── -->
+    <g id="sat-group" style="transform:translate(-200px,-200px);opacity:0;">
+      <circle cx="0" cy="0" r="92" fill="none"
+              stroke="currentColor" stroke-width="0.9"
+              stroke-dasharray="2 4" opacity="0.30"/>
+      <circle cx="0" cy="0" r="92" fill="none"
+              stroke="currentColor" stroke-width="0.5" opacity="0.10"/>
+      <g id="sat-rot">
+        <circle cx="0" cy="0" r="14" fill="url(#satGlow)" opacity="0.85"/>
+        <circle cx="0" cy="0" r="5"  fill="currentColor" opacity="0.55"/>
+        <circle cx="0" cy="0" r="2.6" fill="rgba(255,255,255,1)"/>
+        <path d="M 0 0 m -10 -2 a 11 11 0 0 1 18 -4"
+              fill="none" stroke="currentColor" stroke-width="1.4"
+              stroke-linecap="round" opacity="0.35"/>
+      </g>
+    </g>
+
+    <!-- ── MOON ────────────────────────────────────────────── -->
+    <g id="moon-group" style="transform:translate(-200px,-200px);opacity:1;">
+      <circle class="moon-halo" cx="0" cy="0" r="60" fill="url(#moonHalo)"/>
+      <circle cx="0" cy="0" r="26" fill="url(#moonGrad)"/>
+      <g style="clip-path: circle(26px at 0 0);">
+        <circle cx="0" cy="0" r="26" fill="url(#moonShade)"/>
+        <circle cx="-7" cy="-9" r="3.2" fill="url(#crater1)" opacity="0.6"/>
+        <circle cx="6"  cy="4"  r="2.4" fill="url(#crater1)" opacity="0.5"/>
+        <circle cx="-3" cy="10" r="1.8" fill="url(#crater1)" opacity="0.55"/>
+        <circle cx="9"  cy="-6" r="1.2" fill="url(#crater1)" opacity="0.4"/>
+      </g>
+      <circle cx="0" cy="0" r="26" fill="none"
+              stroke="rgba(255,255,255,0.35)" stroke-width="0.6"/>
+      <circle cx="10" cy="-4" r="22" fill="#0B091A" opacity="0.92"/>
+    </g>
+  </svg>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       HUD: top-left → room code + session dots
+       ───────────────────────────────────────────────────────────── -->
+  <div id="hud-tl" class="absolute top-7 left-8 text-white animate-fade-rise">
+    <div class="hud-chip liquid-glass">
+      <span class="inline-block w-1 h-1 rounded-full bg-current opacity-60"></span>
+      <span id="room-label" class="ui-num text-[12px] text-white"></span>
+      <span class="w-px h-3" style="background:linear-gradient(to bottom,transparent,rgba(255,255,255,0.22),transparent);"></span>
+      <span id="sessions" class="text-[12px] text-white opacity-80 tracking-[0.32em] leading-none"></span>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       HUD: top-right → conn dot + clock + date
+       ───────────────────────────────────────────────────────────── -->
+  <div id="hud-tr" class="absolute top-7 right-8 text-right flex flex-col items-end gap-2 animate-fade-rise-delay">
+    <div class="hud-chip liquid-glass">
+      <span id="conn-dot" class="inline-block w-1.5 h-1.5 rounded-full bg-white opacity-0 transition-opacity duration-1000"></span>
+      <span id="clock" class="font-display text-white text-[18px] leading-none" style="letter-spacing: 0.01em;">--:--</span>
+    </div>
+    <div id="date-label" class="ui-label opacity-60 pr-1"></div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       CENTER: Focus button + duration chips (idle state)
+       ───────────────────────────────────────────────────────────── -->
+  <div id="center-cluster" class="relative z-10 flex flex-col items-center gap-7 animate-fade-rise-delay-2">
+    <button id="focus-btn" class="focus-btn liquid-glass interactive">
+      Focus
+    </button>
+
+    <div id="dur-chips" class="liquid-glass inline-flex items-center gap-1 px-1.5 py-1.5" style="border-radius: 999px;">
+      <button data-min="25" class="dur-segment">25분</button>
+      <button data-min="50" class="dur-segment">50분</button>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       POMODORO: monumental timer + active controls (hidden until active)
+       ───────────────────────────────────────────────────────────── -->
+  <div id="pomodoro"
+    class="absolute z-10 opacity-0 pointer-events-none flex flex-col items-center gap-12">
+    <span id="pom-time">50:00</span>
+
+    <div class="grid place-items-center">
+      <div id="break-row"
+        class="col-start-1 row-start-1 opacity-0 pointer-events-none flex items-center gap-3 px-4 py-1.5 rounded-full liquid-glass">
+        <span class="pom-ctl" style="color:hsl(var(--foreground));">break</span>
+        <span class="ctrl-sep"></span>
+        <button id="btn-skip-break" class="pom-ctl">skip →</button>
+      </div>
+      <div id="focus-row"
+        class="col-start-1 row-start-1 opacity-0 pointer-events-none flex items-center gap-3 px-4 py-1.5 rounded-full liquid-glass">
+        <button id="btn-pause-timer"  class="pom-ctl">정지</button>
+        <span class="ctrl-sep"></span>
+        <button id="btn-cancel-timer" class="pom-ctl">취소</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       TIME DIAL: bottom-left
+       ───────────────────────────────────────────────────────────── -->
+  <div id="time-dial" class="absolute bottom-7 left-7 z-30 select-none animate-fade-rise-delay-3"
+       title="시간을 드래그하여 조절 (더블클릭으로 리셋)">
+    <div class="liquid-glass px-4 py-3 flex flex-col gap-2" style="min-width: 12rem; border-radius: var(--radius);">
+      <div class="dial-header flex items-center justify-between">
+        <div class="flex items-center gap-1.5 opacity-80">
+          <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+          </svg>
+          <span class="ui-label">시간</span>
+        </div>
+        <button id="btn-reset-time" title="현재 시각으로"
+          class="ui-label opacity-55 hover:opacity-100 transition-opacity">지금</button>
+      </div>
+      <div class="flex items-center gap-2 opacity-95 pt-0.5">
+        <span class="ui-num text-[9px] opacity-40">00</span>
+        <input id="time-slider" type="range" min="0" max="1439" value="720"
+               class="w-32 cursor-pointer" />
+        <span class="ui-num text-[9px] opacity-40">24</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────────────────────────────
+       CONTROLS: bottom-center
+       Stack (bottom → top): action-bar · exit-confirm · track-row · music-bar
+       ───────────────────────────────────────────────────────────── -->
+  <div id="controls" class="absolute bottom-7 left-0 right-0 px-6 flex flex-col gap-2 items-center z-20 animate-fade-rise-delay-3">
+
+    <!-- Music controls: hidden until user adds a track -->
+    <div id="music-bar" class="ctrl-bar liquid-glass">
+      <button id="btn-pause" class="ctrl-btn">정지</button>
+      <button id="btn-play"  class="ctrl-btn">재생</button>
+      <span class="ctrl-sep"></span>
+      <button id="btn-skip"  class="ctrl-btn">다음 →</button>
+    </div>
+
+    <!-- Track input: shown when + 트랙 tapped -->
+    <div id="track-row" class="liquid-glass" style="display:none;border-radius:999px;padding:0.6rem 1.2rem;align-items:center;gap:0.75rem;">
+      <input id="track-input" type="text" inputmode="url" autocomplete="off" spellcheck="false"
+             placeholder="YouTube URL 또는 영상 ID"
+             class="bg-transparent outline-none border-b pb-1"
+             style="width:min(200px,46vw);" />
+      <button id="track-add"    class="ctrl-btn">추가</button>
+      <span class="ctrl-sep"></span>
+      <button id="track-cancel" class="ctrl-btn" style="opacity:0.6;">취소</button>
+    </div>
+
+    <!-- Exit confirmation: shown when timer active + 나가기 tapped -->
+    <div id="exit-confirm" class="ctrl-bar liquid-glass" style="display:none;">
+      <span class="ctrl-btn" style="opacity:0.65;cursor:default;pointer-events:none;">정말 나가시겠어요?</span>
+      <span class="ctrl-sep"></span>
+      <button id="btn-exit-yes" class="ctrl-btn" style="color:rgba(255,90,70,0.95);">나가기</button>
+      <span class="ctrl-sep"></span>
+      <button id="btn-exit-no"  class="ctrl-btn">취소</button>
+    </div>
+
+    <!-- Action bar: always visible -->
+    <div id="action-bar" class="ctrl-bar liquid-glass">
+      <button id="btn-scene"     class="ctrl-btn">◈ 하늘</button>
+      <span class="ctrl-sep"></span>
+      <button id="btn-add-track" class="ctrl-btn">+ 트랙</button>
+      <span class="ctrl-sep"></span>
+      <button id="btn-locate"    class="ctrl-btn">◎ 위치</button>
+      <span class="ctrl-sep"></span>
+      <button id="btn-exit"      class="ctrl-btn">← 나가기</button>
+    </div>
+
+  </div>
+
+  <!-- Hidden YouTube player -->
+  <div id="yt-frame" class="absolute" style="width:1px;height:1px;overflow:hidden;left:-9999px;top:-9999px;"></div>
+
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

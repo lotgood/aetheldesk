@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Virtual environments
+venv/
+.venv/
+
+# Local agent/tool state
+.claude/
+.omc/
+.codegraph/
+.omo/
+
+# OS/editor noise
+.DS_Store
+*.swp
