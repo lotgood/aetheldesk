@@ -1,12 +1,16 @@
 import asyncio
+import json
 from collections.abc import Awaitable
+from datetime import datetime
 from types import ModuleType
 from typing import Callable, TypedDict, cast
 
 import pytest
 from fastapi import WebSocket
+from fastapi.testclient import TestClient
 
 from backend import main as backend_main_module
+from backend import state as backend_state_module
 
 
 class MusicState(TypedDict):
@@ -82,6 +86,30 @@ def updated_celestial_stub(*_args: object, **_kwargs: object) -> dict[str, objec
     return {"marker": "updated"}
 
 
+def test_backend_state_make_state_defaults_are_json_serializable(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(backend_state_module, "get_celestial_state", celestial_stub)
+
+    state = backend_state_module.make_state()
+
+    assert json.dumps(state)
+    assert state["focus"] is False
+    assert state["paused"] is False
+    assert state["pomodoro_duration"] == 3000
+    assert state["pomodoro_remaining"] == 3000
+    assert state["break"] is False
+    assert state["music"]["video_id"] == "jfKfPfyJRdk"
+    assert state["celestial"] == {"marker": "celestial"}
+    assert state["time_override"] is None
+    assert state["sessions_done"] == 0
+
+
+def test_backend_main_exports_state_compatibility_names():
+    assert backend_main_module.BackendState is backend_state_module.BackendState
+    assert backend_main_module.MusicState is backend_state_module.MusicState
+    assert backend_main_module.advance_timer_state is backend_state_module.advance_timer_state
+    assert backend_main_module._parse_iso is backend_state_module._parse_iso
+
+
 def test_make_state_defaults(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(backend_main_module, "get_celestial_state", celestial_stub)
 
@@ -94,6 +122,8 @@ def test_make_state_defaults(monkeypatch: pytest.MonkeyPatch):
     assert state["break"] is False
     assert state["music"]["video_id"] == "jfKfPfyJRdk"
     assert state["celestial"] == {"marker": "celestial"}
+    assert state["time_override"] is None
+    assert state["sessions_done"] == 0
 
 
 def test_handle_focus_music_and_duration_transitions(monkeypatch: pytest.MonkeyPatch):
@@ -271,3 +301,108 @@ def test_schedule_cleanup_keeps_rejoined_room(monkeypatch: pytest.MonkeyPatch):
         asyncio.run(run())
     finally:
         _ = backend_main_module.rooms.pop(room_id, None)
+
+
+def test_advance_timer_state_uses_long_break_on_fourth_session(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(backend_main_module, "get_celestial_state", celestial_stub)
+    state = make_timer_state(focus=True, pomodoro_remaining=1, sessions_done=3)
+
+    needs_broadcast = backend_main_module.advance_timer_state(state)
+
+    assert needs_broadcast is True
+    assert state["sessions_done"] == 4
+    assert state["break"] is True
+    assert state["break_remaining"] == 1500
+
+
+def test_handle_time_override_accepts_none_and_iso(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(backend_main_module, "get_celestial_state", celestial_stub)
+    state = backend_main.make_state()
+
+    async def run() -> None:
+        await backend_main.handle(state, {"type": "time_override", "iso": None})
+        assert state["time_override"] is None
+
+        await backend_main.handle(state, {"type": "time_override", "iso": "2026-01-01T10:00:00+00:00"})
+        assert state["time_override"] == "2026-01-01T10:00:00+00:00"
+
+    asyncio.run(run())
+
+
+def test_handle_location_valid_updates_celestial(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(backend_main_module, "get_celestial_state", celestial_stub)
+    state = backend_main.make_state()
+    state["time_override"] = "2026-01-01T10:00:00+00:00"
+    called = {"count": 0}
+
+    def tracking_get_celestial_state(*args: object, **kwargs: object) -> dict[str, object]:
+        del args
+        called["count"] += 1
+        assert kwargs["lat"] == pytest.approx(37.5)
+        assert kwargs["lon"] == pytest.approx(127.1)
+        assert cast(datetime, kwargs["dt"]).tzinfo is not None
+        return {"marker": "updated"}
+
+    monkeypatch.setattr(backend_main_module, "get_celestial_state", tracking_get_celestial_state)
+
+    async def run() -> None:
+        await backend_main.handle(state, {"type": "location", "lat": 37.5, "lon": 127.1})
+
+    asyncio.run(run())
+
+    assert called["count"] == 1
+    assert state["celestial"] == {"marker": "updated"}
+
+
+@pytest.mark.parametrize("minutes", [1, 120])
+def test_handle_set_duration_accepts_boundary_minutes(minutes: int, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(backend_main_module, "get_celestial_state", celestial_stub)
+    state = backend_main.make_state()
+
+    async def run() -> None:
+        await backend_main.handle(state, {"type": "set_duration", "minutes": minutes})
+
+    asyncio.run(run())
+
+    assert state["pomodoro_duration"] == minutes * 60
+    assert state["pomodoro_remaining"] == minutes * 60
+
+
+def test_handle_ignores_unknown_message_type(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(backend_main_module, "get_celestial_state", celestial_stub)
+    state = backend_main.make_state()
+    before = make_timer_state(
+        focus=state["focus"],
+        paused=state["paused"],
+        pomodoro_remaining=state["pomodoro_remaining"],
+        pomodoro_duration=state["pomodoro_duration"],
+        break_=state["break"],
+        break_remaining=state["break_remaining"],
+        sessions_done=state["sessions_done"],
+        time_override=state["time_override"],
+        celestial=state["celestial"],
+        music_playing=state["music"]["playing"],
+        video_id=state["music"]["video_id"],
+    )
+
+    async def run() -> None:
+        await backend_main.handle(state, {"type": "not_a_real_type", "x": 1})
+
+    asyncio.run(run())
+
+    assert state == before
+
+
+def test_routes_serve_lobby_room_and_static_assets():
+    with TestClient(backend_main_module.app) as client:
+        lobby = client.get("/")
+        assert lobby.status_code == 200
+        assert "<title>AethelDesk</title>" in lobby.text
+
+        room = client.get("/room/ABCD")
+        assert room.status_code == 200
+        assert "id=\"room-label\"" in room.text
+
+        static_js = client.get("/app.js")
+        assert static_js.status_code == 200
+        assert "const ROOM_ID" in static_js.text
