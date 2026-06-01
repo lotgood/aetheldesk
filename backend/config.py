@@ -7,6 +7,11 @@ ROOM_TTL_SECONDS: Final[int] = int(os.getenv("ROOM_TTL_SECONDS", "300"))
 ROOM_TICK_LOCK_SECONDS: Final[int] = int(os.getenv("ROOM_TICK_LOCK_SECONDS", "2"))
 ENVIRONMENT: Final[str] = os.getenv("AETHELDESK_ENV", "production").strip().lower()
 
+# Only honor X-Forwarded-For for client identity (rate limiting) when running
+# behind a trusted reverse proxy. Off by default so a directly exposed app
+# cannot have its PIN brute-force protection bypassed via a spoofed header.
+TRUST_PROXY: Final[bool] = os.getenv("AETHELDESK_TRUST_PROXY", "").strip().lower() in {"1", "true", "yes", "on"}
+
 TEST_SECRET_KEY: Final[str] = "test-only-secret"
 
 

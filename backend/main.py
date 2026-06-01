@@ -21,14 +21,14 @@ try:
     from backend import auth
     from backend import state as state_reducer
     from backend.connection_manager import LocalConnectionManager
-    from backend.redis_contract import normalize_room_id
+    from backend.redis_contract import is_valid_room_id, normalize_room_id
     from backend.state import BackendState, MusicState, _parse_iso, advance_timer_state
 except ModuleNotFoundError:
     import config
     import auth
     import state as state_reducer
     from connection_manager import LocalConnectionManager
-    from redis_contract import normalize_room_id
+    from redis_contract import is_valid_room_id, normalize_room_id
     from state import BackendState, MusicState, _parse_iso, advance_timer_state
 
 try:
@@ -96,23 +96,37 @@ local_token_hashes: dict[str, set[str]] = {}
 worker_id = config.get_worker_identity()
 
 
+PIN_MIN_LENGTH = 4
+PIN_MAX_LENGTH = 64
+
+
 class CreateRoomRequest(BaseModel):
     room_id: str | None = Field(default=None)
-    pin: str
+    pin: str = Field(min_length=PIN_MIN_LENGTH, max_length=PIN_MAX_LENGTH)
 
 
 class JoinRoomRequest(BaseModel):
-    pin: str
+    pin: str = Field(min_length=PIN_MIN_LENGTH, max_length=PIN_MAX_LENGTH)
 
 
 def _generated_room_id() -> str:
     return "R" + os.urandom(4).hex().upper()[:7]
 
 
+def _require_valid_room_id(room_id: str) -> str:
+    normalized = normalize_room_id(room_id)
+    if not is_valid_room_id(normalized):
+        raise HTTPException(status_code=400, detail="invalid room id")
+    return normalized
+
+
 def _client_fingerprint(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for", "")
-    first = forwarded.split(",", 1)[0].strip()
-    ip = first or (request.client.host if request.client is not None else "unknown")
+    ip: str | None = None
+    if config.TRUST_PROXY:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        ip = forwarded.split(",", 1)[0].strip() or None
+    if not ip:
+        ip = request.client.host if request.client is not None else "unknown"
     key = config.get_secret_key().encode("utf-8")
     return hmac.new(key, ip.encode("utf-8"), hashlib.sha256).hexdigest()
 
@@ -357,7 +371,7 @@ async def health() -> dict[str, str]:
 
 @app.post("/api/rooms")
 async def create_room(request_body: CreateRoomRequest, request: Request):
-    requested_id = normalize_room_id(request_body.room_id) if request_body.room_id else _generated_room_id()
+    requested_id = _require_valid_room_id(request_body.room_id) if request_body.room_id else _generated_room_id()
     fingerprint = _client_fingerprint(request)
 
     if room_store is not None:
@@ -394,7 +408,7 @@ async def create_room(request_body: CreateRoomRequest, request: Request):
 
 @app.post("/api/rooms/{room_id}/join")
 async def join_room(room_id: str, request_body: JoinRoomRequest, request: Request):
-    normalized = normalize_room_id(room_id)
+    normalized = _require_valid_room_id(room_id)
     fingerprint = _client_fingerprint(request)
     await _assert_not_rate_limited(normalized, fingerprint)
     if room_store is not None:
@@ -414,7 +428,7 @@ async def join_room(room_id: str, request_body: JoinRoomRequest, request: Reques
 async def ws_endpoint(websocket: WebSocket, room_id: str):
     normalized = normalize_room_id(room_id)
     token = websocket.query_params.get("token")
-    if not token:
+    if not token or not is_valid_room_id(normalized):
         await websocket.accept()
         await websocket.close(code=WS_AUTH_CLOSE_CODE, reason=WS_AUTH_CLOSE_REASON)
         return
