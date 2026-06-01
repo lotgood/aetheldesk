@@ -6,6 +6,8 @@
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-backend-009688?style=flat-square">
   <img alt="Vanilla JavaScript" src="https://img.shields.io/badge/Vanilla%20JS-frontend-f7df1e?style=flat-square">
   <img alt="No build step" src="https://img.shields.io/badge/no%20build%20step-static%20frontend-4b5563?style=flat-square">
+  <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square">
+  <img alt="Python 3.12" src="https://img.shields.io/badge/python-3.12-3776ab?style=flat-square">
 </p>
 
 AethelDesk is a small shared-room dashboard for focus sessions, celestial ambience, and synchronized lofi controls. Run it on your Mac, open the same PIN-protected room on your iPad, and keep both screens in sync.
@@ -87,10 +89,11 @@ Required and useful environment variables:
 | `ROOM_TICK_LOCK_SECONDS` | `2` | Redis lock TTL for per-room scheduler ticks. |
 | `AETHELDESK_ENV` | `docker` in `.env.example` | Runtime mode. Use `test` only for local/test runs. |
 | `AETHELDESK_SECRET_KEY` | none | Required outside pytest/test mode for Room PIN tokens. |
+| `AETHELDESK_TRUST_PROXY` | off | Set to `1` only behind a trusted reverse proxy so `X-Forwarded-For` is used for PIN rate-limit identity. Leave off when the app is exposed directly. |
 
 ## Room PIN Behavior
 
-Create and join both require a PIN. On success, the frontend stores the opaque token in `sessionStorage` under `room_token:{ROOM_ID}` and uses it on the room WebSocket URL.
+Create and join both require a PIN of 4–64 characters. Room ids are restricted to `[A-Z0-9]` (1–64 chars) after normalization, so they cannot inject extra Redis key segments. On success, the frontend stores the opaque token in `sessionStorage` under `room_token:{ROOM_ID}` and uses it on the room WebSocket URL.
 
 Plaintext PIN values are sent only with the create or join request. They are not stored in Redis, room state, WebSocket payloads, `sessionStorage`, or `localStorage` after the request completes. Authentication failures use generic responses, including the Korean room error `입장할 수 없습니다`, so the UI does not reveal whether a room exists.
 
@@ -124,6 +127,7 @@ When placing AethelDesk behind a reverse proxy, preserve WebSocket upgrades for 
 * Preserve `Host` and `X-Forwarded-For`.
 * Disable response buffering on WebSocket paths.
 * Keep WebSocket timeouts long enough for focus sessions.
+* Set `AETHELDESK_TRUST_PROXY=1` so the app reads the real client IP from `X-Forwarded-For` for PIN rate limiting. Only do this when the proxy is trusted and overwrites the header.
 
 Without these settings, room sync can fail or disconnect unexpectedly.
 
@@ -183,3 +187,26 @@ aetheldesk/
 |-- requirements.txt
 `-- requirements-dev.txt
 ```
+
+## Contributing
+
+Contributions are welcome. To keep the project small and predictable:
+
+1. Open an issue first for anything beyond a small fix, so scope can be agreed before code.
+2. Fork, branch from `main`, and keep changes focused.
+3. Match the existing style: plain Python and classic-script JavaScript, no build step, no new heavyweight dependencies.
+4. Add or update tests for behavior changes and make sure the suite passes:
+
+   ```bash
+   python -m pip install -r requirements-dev.txt
+   python -m pytest -q
+   node --check frontend/app.js && node --check frontend/scenes.js
+   ```
+
+5. Open a pull request describing the change and how you verified it.
+
+Please keep proposals within the project's intent — see [Out Of Scope](#out-of-scope) before suggesting larger systems.
+
+## License
+
+Released under the [MIT License](LICENSE). You are free to use, modify, and distribute it, including for commercial purposes, provided the copyright and license notice are retained.
