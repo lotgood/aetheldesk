@@ -1,0 +1,96 @@
+name: Python Tooling
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    name: Ruff, Pyright, and pytest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      - name: Lint Python
+        run: uv run ruff check .
+
+      - name: Type check Python
+        run: uv run pyright
+
+      - name: Run default tests
+        run: uv run pytest -q
+
+  e2e:
+    name: Playwright e2e
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      - name: Install Chromium
+        run: uv run playwright install --with-deps chromium
+
+      - name: Prepare Docker Compose environment
+        run: |
+          cp .env.example .env
+          python - <<'PY'
+          from pathlib import Path
+
+          env_path = Path(".env")
+          env_text = env_path.read_text(encoding="utf-8")
+          env_text = env_text.replace(
+              "AETHELDESK_SECRET_KEY=replace-with-long-random-secret",
+              "AETHELDESK_SECRET_KEY=ci-health-gate-test-secret",
+          )
+          env_path.write_text(env_text, encoding="utf-8")
+          PY
+
+      - name: Start Docker Compose stack
+        run: docker compose up --build --detach
+
+      - name: Wait for Docker Compose health
+        run: |
+          docker compose ps
+          for attempt in {1..30}; do
+            if curl -fsS http://127.0.0.1:${APP_PORT:-8000}/health; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose ps
+          docker compose logs app redis
+          exit 1
+
+      - name: Run browser e2e tests
+        run: uv run pytest tests/e2e -m e2e --browser chromium -q
+
+      - name: Stop Docker Compose stack
+        if: always()
+        run: docker compose down --volumes
