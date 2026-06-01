@@ -331,6 +331,18 @@
     }
     #track-input::placeholder { color: rgba(255,255,255,0.40); }
     #track-modal { transition: opacity 0.2s ease; }
+    #room-auth {
+      transition: opacity 0.5s var(--ease);
+    }
+    #room-pin-input {
+      user-select: text; -webkit-user-select: text;
+      font-family: var(--font-body);
+      font-size: 13px;
+      letter-spacing: 0.22em;
+      color: hsl(var(--foreground));
+      border-color: rgba(255,255,255,0.22) !important;
+    }
+    #room-pin-input::placeholder { color: rgba(255,255,255,0.40); }
 
     /* ──────────────────────────────────────────────────────────────
        Time dial slider
@@ -721,10 +733,22 @@
 
   </div>
 
+  <!-- Room PIN prompt: shown only when a session token is missing or rejected. -->
+  <div id="room-auth" class="absolute inset-0 z-40 hidden items-center justify-center px-6">
+    <div class="liquid-glass flex flex-col items-center gap-4 px-7 py-6 text-center" style="border-radius: var(--radius);">
+      <div class="ui-label opacity-70">Room PIN</div>
+      <input id="room-pin-input" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN"
+             class="bg-transparent outline-none border-b pb-2 text-center w-36" />
+      <p id="room-auth-error" class="ui-label min-h-4 opacity-70"></p>
+      <button id="room-pin-submit" class="ctrl-btn">입장</button>
+    </div>
+  </div>
+
   <!-- Hidden YouTube player -->
   <div id="yt-frame" class="absolute" style="width:1px;height:1px;overflow:hidden;left:-9999px;top:-9999px;"></div>
 
   <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="/scenes.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>
