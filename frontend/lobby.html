@@ -14,6 +14,10 @@
       max-height: 0; opacity: 0; overflow: hidden; pointer-events: none;
       transition: max-height 0.4s ease, opacity 0.4s ease;
     }
+    #lobby-error {
+      min-height: 1rem;
+      transition: opacity 0.3s ease;
+    }
   </style>
 </head>
 <body class="w-screen h-screen flex items-center justify-center select-none">
@@ -51,11 +55,18 @@
 
     <h1 class="text-xs tracking-[0.5em] uppercase font-light" style="opacity:0.35">AethelDesk</h1>
 
-    <button id="btn-start"
-      class="font-light tracking-[0.5em] text-xs uppercase px-10 py-4 hover:opacity-100 transition-opacity duration-300"
-      style="opacity:0.6">
-      시작
-    </button>
+    <div class="flex flex-col items-center gap-3">
+      <input id="pin-input" type="password" inputmode="numeric" autocomplete="off" placeholder="방 PIN"
+        class="bg-transparent text-center text-sm font-light tracking-[0.3em] outline-none w-32 pb-2"
+        style="border-bottom: 1px solid currentColor; opacity: 0.75;" />
+      <button id="btn-start"
+        class="font-light tracking-[0.5em] text-xs uppercase px-10 py-4 hover:opacity-100 transition-opacity duration-300"
+        style="opacity:0.6">
+        시작
+      </button>
+    </div>
+
+    <p id="lobby-error" class="text-xs font-light tracking-widest" style="opacity:0.55"></p>
 
     <button id="code-toggle"
       class="text-xs font-light tracking-widest hover:opacity-60 transition-opacity duration-300"
@@ -223,11 +234,63 @@
 
     // ── Navigation ─────────────────────────────────────────────────────────────
     function randCode() { return Math.random().toString(36).slice(2, 6).toUpperCase(); }
+    function tokenStorageKey(roomId) { return `room_token:${roomId}`; }
+    function showLobbyError(message) {
+      document.getElementById("lobby-error").textContent = message || "";
+    }
+    function readPin() { return document.getElementById("pin-input").value.trim(); }
+    function clearPin() { document.getElementById("pin-input").value = ""; }
     function go(code) { if (code) location.href = `/room/${code.toUpperCase()}`; }
 
-    document.getElementById("btn-start").addEventListener("click", () => go(randCode()));
-    document.getElementById("btn-join").addEventListener("click", () =>
-      go(document.getElementById("room-input").value.trim()));
+    async function createRoom() {
+      const requestedRoomId = document.getElementById("room-input").value.trim().toUpperCase();
+      const roomId = requestedRoomId || randCode();
+      const pin = readPin();
+      if (!pin) { document.getElementById("pin-input").focus(); return; }
+      showLobbyError("");
+      try {
+        const response = await fetch("/api/rooms", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ room_id: roomId, pin }),
+        });
+        if (!response.ok) throw new Error("room rejected");
+        const data = await response.json();
+        const nextRoomId = String(data.room_id || roomId).toUpperCase();
+        sessionStorage.setItem(tokenStorageKey(nextRoomId), data.token);
+        go(nextRoomId);
+      } catch (_) {
+        showLobbyError("입장할 수 없습니다");
+      } finally {
+        clearPin();
+      }
+    }
+
+    async function joinRoom() {
+      const roomId = document.getElementById("room-input").value.trim().toUpperCase();
+      const pin = readPin();
+      if (!roomId) { document.getElementById("room-input").focus(); return; }
+      if (!pin) { document.getElementById("pin-input").focus(); return; }
+      showLobbyError("");
+      try {
+        const response = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/join`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pin }),
+        });
+        if (!response.ok) throw new Error("room rejected");
+        const data = await response.json();
+        sessionStorage.setItem(tokenStorageKey(roomId), data.token);
+        go(roomId);
+      } catch (_) {
+        showLobbyError("입장할 수 없습니다");
+      } finally {
+        clearPin();
+      }
+    }
+
+    document.getElementById("btn-start").addEventListener("click", createRoom);
+    document.getElementById("btn-join").addEventListener("click", joinRoom);
 
     let codeOpen = false;
     document.getElementById("code-toggle").addEventListener("click", () => {
@@ -240,7 +303,10 @@
     });
 
     document.getElementById("room-input").addEventListener("keydown", e => {
-      if (e.key === "Enter") go(document.getElementById("room-input").value.trim());
+      if (e.key === "Enter") joinRoom();
+    });
+    document.getElementById("pin-input").addEventListener("keydown", e => {
+      if (e.key === "Enter") codeOpen ? joinRoom() : createRoom();
     });
   </script>
 </body>
