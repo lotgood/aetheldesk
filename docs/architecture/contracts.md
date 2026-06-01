@@ -10,7 +10,21 @@ This document records the Wave 1 contract baseline for modernization. Later refa
 | State authority | FastAPI owns authoritative room state. Redis stores the cross-worker canonical JSON state when configured; the in-memory path is only for tests/local no-Redis behavior. |
 | Room identity | Room ids are normalized with `normalize_room_id(room_id)`, which strips surrounding whitespace and uppercases the id. Valid ids match `[A-Z0-9]{1,64}` after normalization. |
 | Auth and secrecy | Create/join requests accept plaintext PINs only at the request boundary. Stored PINs and tokens are hashes; API responses do not expose PINs, PIN hashes, or token hashes. Auth failures remain generic. |
-| Frontend stack | The current frontend is static vanilla HTML/CSS/JavaScript with classic script loading. Modernization may add tooling later but must preserve these runtime contracts first. |
+| Frontend stack | The current frontend is static vanilla HTML/CSS/JavaScript with classic script loading. The approved modernization target is Vite + vanilla ES modules only. React, Vue, Svelte, and TypeScript remain out of scope unless separately approved. |
+
+## Modernization Governance
+
+These decisions guide later waves without changing the Wave 1 runtime contracts above. Current-state wording describes what exists now. Target wording describes approved future work only.
+
+| Area | Governance |
+|---|---|
+| Frontend tooling | Vite + vanilla ES modules is approved for future frontend modernization. Vite is approved only for vanilla ES modules in this plan. |
+| Framework scope | React, Vue, Svelte, and TypeScript remain out of scope unless separately approved. Webpack is not part of this modernization plan. |
+| Workflows | Docker Compose and local `uv run` are first-class target workflows. `uv sync --frozen`, `uv run pytest -q`, `npm run build`, and `docker compose up --build --detach` are the command matrix anchors as their owning tasks land. |
+| Redis policy | Redis is mandatory for Docker/prod and cross-worker behavior. The in-memory fallback is only for tests and local no-Redis development until isolated. |
+| UI language | The UI should become Korean-primary during UX work. A full i18n toggle is out of scope for this plan. |
+| External frontend dependencies | The YouTube iframe API remains allowed. Tailwind CDN usage should be replaced with local build assets after Vite parity. Google Fonts should be self-hosted or given a local fallback later. |
+| Excluded systems | SQL/accounts/analytics, Redis Streams, Celery, Kubernetes, TLS automation, and reverse-proxy config changes remain out of scope. |
 
 ## Route Matrix
 
