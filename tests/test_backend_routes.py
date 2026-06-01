@@ -171,3 +171,17 @@ def test_health_returns_503_when_redis_unreachable(api_client: tuple[TestClient,
 
     assert response.status_code == 503
     assert response.json() == {"detail": "redis unavailable"}
+
+
+def test_root_and_room_routes_serve_static_pages(api_client: tuple[TestClient, FakeRedis]):
+    client, _redis = api_client
+
+    lobby = client.get("/")
+    room = client.get("/room/mixd")
+
+    assert lobby.status_code == 200
+    assert "text/html" in lobby.headers.get("content-type", "")
+    assert 'id="btn-start"' in lobby.text
+    assert room.status_code == 200
+    assert "text/html" in room.headers.get("content-type", "")
+    assert 'id="room-label"' in room.text

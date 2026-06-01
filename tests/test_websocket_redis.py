@@ -194,6 +194,34 @@ def test_inbound_message_updates_redis_and_publishes_full_state_snapshot(websock
     assert envelope["data"] == stored
 
 
+def test_two_clients_receive_broadcast_state_snapshot(websocket_client: tuple[TestClient, FakeRedis]):
+    client, _redis = websocket_client
+    token_a = create_room(client, "FANOUT")
+    joined = client.post("/api/rooms/FANOUT/join", json={"pin": "2468"})
+    assert joined.status_code == 200
+    token_b = str(joined.json()["token"])
+
+    with client.websocket_connect(f"/ws/FANOUT?token={token_a}") as ws_a:
+        with client.websocket_connect(f"/ws/FANOUT?token={token_b}") as ws_b:
+            ws_a.receive_json()
+            ws_b.receive_json()
+
+            ws_a.send_json({"type": "focus_toggle"})
+
+            update_a = ws_a.receive_json()
+            update_b = ws_b.receive_json()
+            if update_a["data"]["focus"] is False:
+                update_a = ws_a.receive_json()
+            if update_b["data"]["focus"] is False:
+                update_b = ws_b.receive_json()
+
+    assert update_a["type"] == "state"
+    assert update_b["type"] == "state"
+    assert update_a["data"]["focus"] is True
+    assert update_b["data"]["focus"] is True
+    assert update_a["data"] == update_b["data"]
+
+
 def test_mid_session_redis_outage_closes_and_reconnect_recovers(websocket_client: tuple[TestClient, FakeRedis]):
     client, redis = websocket_client
     token = create_room(client, "DROP")

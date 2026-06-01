@@ -173,8 +173,10 @@ def test_websocket_requires_valid_token(room_store_fixture: tuple[Any, FakeRedis
             with client.websocket_connect("/ws/WSOK") as websocket:
                 websocket.receive_text()
         assert missing.value.code == backend_main.WS_AUTH_CLOSE_CODE
+        assert missing.value.code == 1008
 
         with pytest.raises(WebSocketDisconnect) as invalid:
             with client.websocket_connect("/ws/WSOK?token=bad-token") as websocket:
                 websocket.receive_text()
         assert invalid.value.code == backend_main.WS_AUTH_CLOSE_CODE
+        assert invalid.value.code == 1008
