@@ -29,10 +29,10 @@ def _frontend_file(filename: str) -> str:
 
 @router.get("/")
 async def lobby():
-    return FileResponse(_frontend_file("lobby.html"))
+    return FileResponse(_frontend_file("lobby.html"), headers={"Cache-Control": "no-cache"})
 
 
 @router.get("/room/{room_id}")
 async def room_page(room_id: str):
     _ = room_id
-    return FileResponse(_frontend_file("room.html"))
+    return FileResponse(_frontend_file("room.html"), headers={"Cache-Control": "no-cache"})

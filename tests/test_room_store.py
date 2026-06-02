@@ -22,11 +22,19 @@ class FakeRedis:
         self.sets: dict[str, set[str]] = {}
         self.ttls: dict[str, int] = {}
         self.fail_ping = False
+        self.fail_get = False
+        self.fail_set = False
 
     async def get(self, name: str) -> str | None:
+        if self.fail_get:
+            raise ConnectionError("down")
         return self.values.get(name)
 
-    async def set(self, name: str, value: str, ex: int | None = None) -> bool:
+    async def set(self, name: str, value: str, ex: int | None = None, nx: bool = False) -> bool:
+        if self.fail_set:
+            raise ConnectionError("down")
+        if nx and name in self.values:
+            return False
         self.values[name] = value
         if ex is not None:
             self.ttls[name] = ex
@@ -230,6 +238,31 @@ def test_ping_fails_closed_when_redis_connection_is_unavailable():
     async def run() -> None:
         with pytest.raises(RedisUnavailable):
             await store.ping()
+
+    asyncio.run(run())
+
+
+def test_runtime_get_state_fails_closed_when_redis_connection_drops():
+    redis = FakeRedis()
+    store = RoomStore(redis)
+
+    async def run() -> None:
+        await store.create_room("drop", sample_state())
+        redis.fail_get = True
+        with pytest.raises(RedisUnavailable):
+            await store.get_state("DROP")
+
+    asyncio.run(run())
+
+
+def test_runtime_set_state_fails_closed_when_redis_connection_drops():
+    redis = FakeRedis()
+    store = RoomStore(redis)
+
+    async def run() -> None:
+        redis.fail_set = True
+        with pytest.raises(RedisUnavailable):
+            await store.set_state("DROP", sample_state())
 
     asyncio.run(run())
 

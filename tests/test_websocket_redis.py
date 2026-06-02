@@ -9,6 +9,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from backend import main as backend_main
 from backend.redis_contract import room_events_channel, room_state_key
+from backend import room_service
 from backend.room_store import RedisUnavailable, RoomStore
 
 
@@ -103,36 +104,10 @@ class FakeRedis:
         return FakePubSub()
 
 
-class FailingRoomStore(RoomStore):
-    async def get_state(self, room_id: str):
-        try:
-            return await super().get_state(room_id)
-        except ConnectionError as exc:
-            raise RedisUnavailable("Redis is unavailable") from exc
-
-    async def set_state(self, room_id: str, state):
-        try:
-            await super().set_state(room_id, state)
-        except ConnectionError as exc:
-            raise RedisUnavailable("Redis is unavailable") from exc
-
-    async def get_metadata(self, room_id: str):
-        try:
-            return await super().get_metadata(room_id)
-        except ConnectionError as exc:
-            raise RedisUnavailable("Redis is unavailable") from exc
-
-    async def get_token_room_id(self, room_id: str, token_hash: str) -> str | None:
-        try:
-            return await super().get_token_room_id(room_id, token_hash)
-        except ConnectionError as exc:
-            raise RedisUnavailable("Redis is unavailable") from exc
-
-
 @pytest.fixture
 def websocket_client(monkeypatch: pytest.MonkeyPatch) -> Generator[tuple[TestClient, FakeRedis], None, None]:
     redis = FakeRedis()
-    store = FailingRoomStore(redis)
+    store = RoomStore(redis)
     monkeypatch.setattr(backend_main, "room_store", store)
     monkeypatch.setattr(backend_main, "event_bus", backend_main._build_event_bus())
     monkeypatch.setattr(backend_main, "rooms", {})
@@ -247,3 +222,17 @@ def test_mid_session_redis_outage_closes_and_reconnect_recovers(websocket_client
 
     assert recovered["type"] == "state"
     assert recovered["data"]["music"]["playing"] is True
+
+
+def test_startup_redis_outage_fails_closed_in_required_runtime(monkeypatch: pytest.MonkeyPatch):
+    async def unavailable_store():
+        raise RedisUnavailable("Redis is unavailable")
+
+    monkeypatch.setattr(backend_main, "room_store", None)
+    monkeypatch.setattr(room_service.config, "is_test_mode", lambda: False)
+    monkeypatch.setattr(room_service, "create_redis_store", unavailable_store)
+
+    with pytest.raises(RedisUnavailable):
+        import asyncio
+
+        asyncio.run(room_service.initialize_store_and_events())

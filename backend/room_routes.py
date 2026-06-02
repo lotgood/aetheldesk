@@ -36,6 +36,10 @@ make_state = cast(Any, _room_service.make_state)
 router = APIRouter()
 
 
+def _redis_unavailable(exc: RedisUnavailable) -> HTTPException:
+    return HTTPException(status_code=503, detail="redis unavailable")
+
+
 class CreateRoomRequest(BaseModel):
     room_id: str | None = Field(default=None)
     pin: str = Field(min_length=PIN_MIN_LENGTH, max_length=PIN_MAX_LENGTH)
@@ -55,7 +59,7 @@ async def health() -> dict[str, str]:
     try:
         await runtime.room_store.ping()
     except RedisUnavailable as exc:
-        raise HTTPException(status_code=503, detail="redis unavailable") from exc
+        raise _redis_unavailable(exc) from exc
     return {"status": "ok"}
 
 
@@ -66,23 +70,25 @@ async def create_room(request_body: CreateRoomRequest, request: Request):
     fingerprint = _client_fingerprint(request)
 
     if runtime.room_store is not None:
-        metadata = await runtime.room_store.get_metadata(requested_id)
-        if metadata is None or "pin_hash" not in metadata:
-            pin_hash = auth.hash_pin(request_body.pin)
-            try:
+        try:
+            metadata = await runtime.room_store.get_metadata(requested_id)
+            if metadata is None or "pin_hash" not in metadata:
+                pin_hash = auth.hash_pin(request_body.pin)
                 await runtime.room_store.create_room(
                     requested_id,
                     make_state(),
                     metadata={"room_id": requested_id, "pin_hash": pin_hash},
                 )
-            except RoomLimitReached:
-                raise HTTPException(status_code=403, detail="room limit reached") from None
-        else:
-            await _assert_not_rate_limited(requested_id, fingerprint)
-            stored_pin_hash = str(metadata.get("pin_hash", ""))
-            if not stored_pin_hash or not auth.verify_pin(request_body.pin, stored_pin_hash):
-                await _record_failed_attempt(requested_id, fingerprint)
-                await _auth_failure()
+            else:
+                await _assert_not_rate_limited(requested_id, fingerprint)
+                stored_pin_hash = str(metadata.get("pin_hash", ""))
+                if not stored_pin_hash or not auth.verify_pin(request_body.pin, stored_pin_hash):
+                    await _record_failed_attempt(requested_id, fingerprint)
+                    await _auth_failure()
+        except RoomLimitReached:
+            raise HTTPException(status_code=403, detail="room limit reached") from None
+        except RedisUnavailable as exc:
+            raise _redis_unavailable(exc) from exc
     else:
         room = get_room(requested_id)
         if room is None:
@@ -102,14 +108,17 @@ async def join_room(room_id: str, request_body: JoinRoomRequest, request: Reques
     runtime = _runtime()
     normalized = _require_valid_room_id(room_id)
     fingerprint = _client_fingerprint(request)
-    await _assert_not_rate_limited(normalized, fingerprint)
-    if runtime.room_store is not None:
-        metadata = await runtime.room_store.get_metadata(normalized)
-        stored_pin_hash = "" if metadata is None else str(metadata.get("pin_hash", ""))
-    else:
-        stored_pin_hash = runtime.local_pin_hashes.get(normalized, "")
-    if not stored_pin_hash or not auth.verify_pin(request_body.pin, stored_pin_hash):
-        await _record_failed_attempt(normalized, fingerprint)
-        await _auth_failure()
-    token = await _issue_room_token(normalized)
+    try:
+        await _assert_not_rate_limited(normalized, fingerprint)
+        if runtime.room_store is not None:
+            metadata = await runtime.room_store.get_metadata(normalized)
+            stored_pin_hash = "" if metadata is None else str(metadata.get("pin_hash", ""))
+        else:
+            stored_pin_hash = runtime.local_pin_hashes.get(normalized, "")
+        if not stored_pin_hash or not auth.verify_pin(request_body.pin, stored_pin_hash):
+            await _record_failed_attempt(normalized, fingerprint)
+            await _auth_failure()
+        token = await _issue_room_token(normalized)
+    except RedisUnavailable as exc:
+        raise _redis_unavailable(exc) from exc
     return {"token": token}

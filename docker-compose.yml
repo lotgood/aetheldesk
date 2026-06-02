@@ -6,10 +6,11 @@ services:
       - redis-data:/data
       - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG && test \"$$(redis-cli CONFIG GET appendonly | sed -n '2p')\" = yes && test \"$$(redis-cli CONFIG GET appendfsync | sed -n '2p')\" = everysec"]
       interval: 10s
       timeout: 3s
       retries: 5
+      start_period: 5s
 
   app:
     build:

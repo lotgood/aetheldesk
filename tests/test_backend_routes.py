@@ -32,11 +32,17 @@ class FakeRedis:
         self.ttls: dict[str, int] = {}
         self.published: list[tuple[str, str]] = []
         self.fail_ping = False
+        self.fail_get = False
+        self.fail_set = False
 
     async def get(self, name: str) -> str | None:
+        if self.fail_get:
+            raise ConnectionError("redis down")
         return self.values.get(name)
 
     async def set(self, name: str, value: str, ex: int | None = None, nx: bool = False) -> bool:
+        if self.fail_set:
+            raise ConnectionError("redis down")
         if nx and name in self.values:
             return False
         self.values[name] = value
@@ -175,6 +181,28 @@ def test_health_returns_503_when_redis_unreachable(api_client: tuple[TestClient,
     assert response.json() == {"detail": "redis unavailable"}
 
 
+def test_create_room_returns_503_when_redis_runtime_get_fails(api_client: tuple[TestClient, FakeRedis]):
+    client, redis = api_client
+    redis.fail_get = True
+
+    response = client.post("/api/rooms", json={"room_id": "DOWN", "pin": "2468"})
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "redis unavailable"}
+
+
+def test_join_room_returns_503_when_redis_runtime_get_fails(api_client: tuple[TestClient, FakeRedis]):
+    client, redis = api_client
+    created = client.post("/api/rooms", json={"room_id": "JOIN503", "pin": "2468"})
+    assert created.status_code == 200
+    redis.fail_get = True
+
+    response = client.post("/api/rooms/JOIN503/join", json={"pin": "2468"})
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "redis unavailable"}
+
+
 def test_root_and_room_routes_serve_static_pages(api_client: tuple[TestClient, FakeRedis]):
     client, _redis = api_client
 
@@ -186,7 +214,39 @@ def test_root_and_room_routes_serve_static_pages(api_client: tuple[TestClient, F
     assert 'id="btn-start"' in lobby.text
     assert room.status_code == 200
     assert "text/html" in room.headers.get("content-type", "")
+    assert room.headers["cache-control"] == "no-cache"
     assert 'id="room-label"' in room.text
+
+
+def test_api_routes_are_not_shadowed_by_root_static_mount(api_client: tuple[TestClient, FakeRedis]):
+    client, _redis = api_client
+
+    response = client.post("/api/rooms", json={"room_id": "STATIC", "pin": "2468"})
+
+    assert response.status_code == 200
+    assert response.json()["room_id"] == "STATIC"
+
+
+def test_vite_asset_mount_uses_immutable_cache_headers(tmp_path: Path):
+    assets_dir = tmp_path / "assets"
+    assets_dir.mkdir()
+    asset = assets_dir / "app-abc123.js"
+    asset.write_text("export {};", encoding="utf-8")
+    static_app = backend_main.CacheControlledStaticFiles(
+        directory=str(assets_dir),
+        cache_control="public, max-age=31536000, immutable",
+    )
+
+    from fastapi import FastAPI
+
+    app = FastAPI()
+    app.mount("/assets", static_app)
+
+    with TestClient(app) as client:
+        response = client.get("/assets/app-abc123.js")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
 
 
 def test_frontend_file_prefers_vite_dist_and_falls_back_to_source(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):

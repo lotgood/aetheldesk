@@ -90,10 +90,29 @@ local_pin_hashes: dict[str, str] = {}
 local_token_hashes: dict[str, set[str]] = {}
 worker_id = config.get_worker_identity()
 
+
+class CacheControlledStaticFiles(StaticFiles):
+    def __init__(self, *args: Any, cache_control: str, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._cache_control = cache_control
+
+    async def get_response(self, path: str, scope: dict[str, Any]):
+        response = await super().get_response(path, scope)
+        if response.status_code == 200:
+            response.headers["Cache-Control"] = self._cache_control
+        return response
+
 app = FastAPI(lifespan=lifespan)
 app.include_router(frontend_router)
 app.include_router(room_router)
 app.include_router(websocket_router)
 if os.path.isdir(os.path.join(FRONTEND_DIST, "assets")):
-    app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="vite-assets")
-app.mount("/", StaticFiles(directory=FRONTEND), name="static")
+    app.mount(
+        "/assets",
+        CacheControlledStaticFiles(
+            directory=os.path.join(FRONTEND_DIST, "assets"),
+            cache_control="public, max-age=31536000, immutable",
+        ),
+        name="vite-assets",
+    )
+app.mount("/", CacheControlledStaticFiles(directory=FRONTEND, cache_control="no-cache"), name="static")
