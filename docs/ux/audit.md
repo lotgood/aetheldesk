@@ -161,3 +161,15 @@ Use this as the starting Task 10 copy contract:
 5. P1 Task 10 candidate: convert mixed interactive copy to Korean-primary using the glossary above.
 6. P2 later/out of scope: replace one-button scene cycling with a richer scene picker.
 7. P2 later/out of scope: add saved geolocation preferences or manual location entry.
+
+
+## Task 10 Implementation Handoff
+
+Task 10 implemented the highest priority findings from this audit while preserving the Vite + vanilla ES module boundaries, room PIN/token contracts, WebSocket semantics, and storage keys.
+
+- Korean-primary copy is now the expected UI policy for interactive controls, validation errors, live regions, and status text. Keep `AethelDesk`, `PIN`, YouTube terms, API fields, and storage keys stable.
+- Accessibility fixes include explicit labels, live regions, auth and exit dialog semantics, focus trap and restore behavior, hidden-control tab handling, invalid track feedback, and connection, scene, timer, and location status announcements.
+- Reduced-motion handling now disables or reduces decorative CSS animation, transitions, and canvas loops while preserving core room sync.
+- The YouTube iframe API may replace the static frame at runtime, so the live iframe must stay `aria-hidden`, `tabindex="-1"`, and `inert` after construction and readiness.
+- Evidence for the implementation is recorded in `.omo/evidence/task-10-a11y-keyboard.txt`, `.omo/evidence/task-10-a11y-errors.txt`, and `.omo/evidence/task-10-a11y-youtube.txt`.
+- Later UX work should not add a full i18n toggle, scene picker redesign, saved geolocation preferences, or new frontend frameworks unless separately approved.

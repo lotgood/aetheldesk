@@ -4,8 +4,8 @@
 
 <p align="center">
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-backend-009688?style=flat-square">
-  <img alt="Vanilla JavaScript" src="https://img.shields.io/badge/Vanilla%20JS-frontend-f7df1e?style=flat-square">
-  <img alt="Static frontend today" src="https://img.shields.io/badge/frontend-static%20today-4b5563?style=flat-square">
+  <img alt="Vite" src="https://img.shields.io/badge/Vite-frontend-646cff?style=flat-square">
+  <img alt="Vanilla JavaScript" src="https://img.shields.io/badge/Vanilla%20JS-ES%20modules-f7df1e?style=flat-square">
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square">
   <img alt="Python 3.12" src="https://img.shields.io/badge/python-3.12-3776ab?style=flat-square">
 </p>
@@ -16,46 +16,65 @@ AethelDesk is a small shared-room dashboard for focus sessions, celestial ambien
 
 AethelDesk keeps room coordination server owned while the browser client stays lightweight:
 
-* Frontend today: static vanilla HTML, CSS, and classic-script JavaScript served by FastAPI.
-* Frontend target: Vite + vanilla ES modules is approved for future modernization. Vite is approved only for vanilla ES modules in this plan.
-* Backend: FastAPI serves `/`, `/room/{room_id}`, `/app.js`, `/scenes.js`, REST room APIs, WebSockets, and `/health` today. Later Vite static serving must not shadow `/api` or `/ws`.
+* Frontend: Vite + vanilla ES modules. `package.json` and `package-lock.json` are the authoritative frontend dependency files.
+* Backend: FastAPI serves `/`, `/room/{room_id}`, REST room APIs, WebSockets, `/health`, Vite hashed assets at `/assets/*` when `frontend/dist/assets` exists, and source frontend files as a no-cache fallback.
+* Static cache policy: route-owned HTML uses `Cache-Control: no-cache`, Vite hashed `/assets/*` uses `public, max-age=31536000, immutable`, and root static fallback uses `no-cache`.
 * Room state: Redis stores the canonical JSON room state and metadata with keys such as `aetheldesk:room:{ROOM_ID}:state` and `aetheldesk:room:{ROOM_ID}:meta`.
 * Sync: Redis Pub/Sub publishes full-state room snapshots on `aetheldesk:room:{ROOM_ID}:events`; each worker fans updates out only to its own local WebSockets.
 * Scheduler: every worker may run the scheduler, but room timer and celestial ticks mutate state only after the worker acquires the per-room Redis tick lock.
 * Access: rooms use a PIN at create or join time. The backend stores hashes and opaque token hashes, not plaintext PINs.
 
-Redis state is restart-tolerant ephemeral room state when Docker AOF is enabled with `appendfsync everysec`. It helps recover current active room state after a restart, but it is not permanent history, audit storage, analytics storage, or replay storage.
+Redis state is restart-tolerant ephemeral room state when Docker AOF is enabled with `appendfsync everysec`. It can recover current active room state after a restart, but it is not permanent history, audit storage, analytics storage, or replay storage.
+
+See [`docs/architecture/contracts.md`](docs/architecture/contracts.md) for the route, WebSocket, Redis, state, and frontend storage contracts that later work must preserve.
 
 ## What It Does
 
 | Feature | Details |
 |---|---|
 | Celestial ambience | Backend calculates the sun state and broadcasts updates to connected clients. |
-| Shared rooms | `/room/{room_id}` serves room sessions from the same static frontend today. |
+| Shared rooms | `/room/{room_id}` serves the Vite room page for the same shared session. |
 | Room PIN access | Create and join flows require a PIN and return an opaque session token. |
 | Focus mode | Starts a Pomodoro timer with hidden YouTube playback. |
 | Music sync | Play, pause, and skip controls broadcast to all connected clients. |
 | Touch-friendly controls | Desktop controls auto-hide after idle; touch devices keep controls available. |
+| Korean-primary UI | Interactive copy and status text use Korean-first wording while keeping `AethelDesk`, `PIN`, and YouTube terms stable. |
 
-## Workflows
+## Command Matrix
 
-Docker Compose and local `uv run` are the first-class target workflows for this modernization. The repository still supports the current `python -m` flow until Task 3 adds `pyproject.toml` and `uv.lock`.
+Run commands from the repository root unless a row says otherwise.
 
-| Workflow | Status | Use |
+| Command | Use | Expected gate |
 |---|---|---|
-| Current local Python | Available now | Run the app and tests before Task 3 tooling lands. |
-| Target local `uv run` | Approved target | Use after Task 3 adds `uv` project files. |
-| Docker Compose | Available now | Run the app with Redis, matching Docker/prod Redis policy. |
-| Frontend build | Approved target | Use after Vite migration adds `package.json` and build scripts. |
+| `uv sync --frozen` | Install locked Python runtime and dev dependencies from `pyproject.toml` and `uv.lock`. | Required for local dev and CI before Python gates. |
+| `uv run ruff format --check .` | Check Python formatting policy. | CI formatting gate. |
+| `uv run ruff check .` | Run Python lint checks. | CI lint gate. |
+| `uv run pyright` | Run Python type checks. | CI type gate. |
+| `uv run pytest -q` | Run the default non-e2e Python suite. | Required local and CI test gate. |
+| `uv run playwright install chromium` | Install the Chromium browser for Playwright if missing. | Setup step for browser e2e. |
+| `uv run pytest tests/e2e -m e2e --browser chromium -q` | Run Playwright browser e2e. | CI e2e gate and local regression gate for user-visible flows. |
+| `npm ci` | Install locked frontend dependencies from `package-lock.json`. | Docker frontend build stage and clean frontend setup. |
+| `npm run dev` | Start the Vite dev server on `0.0.0.0`. | Local frontend dev with backend proxy. |
+| `npm run build` | Build production Vite assets into `frontend/dist`. | Required local and CI frontend gate. |
+| `docker compose up --build --detach` | Build and start the app plus Redis. | Docker self-host setup and CI Compose health gate where Docker exists. |
+| `docker compose ps` | Check Compose service health. | App and Redis should be healthy after startup. |
+| `curl -fsS http://127.0.0.1:${APP_PORT:-8000}/health` | Check app health. | Returns success when Redis is required and reachable. |
+| `docker compose exec redis redis-cli CONFIG GET appendonly appendfsync` | Confirm Redis AOF policy. | Reports `appendonly yes` and `appendfsync everysec`. |
 
-### Current Local Python Run Flow
+Docker Compose verification is currently blocked in this execution environment because `docker` is not installed. Task 11 implementation is committed, but local Compose health evidence must not be treated as passing here. The blocker is recorded in `.omo/evidence/task-11-docker-health.txt`.
 
-Use this flow for development and tests without Docker while the repository still uses `requirements-dev.txt`:
+## Local Setup
+
+Install the locked Python environment:
 
 ```bash
-python -m pip install -r requirements-dev.txt
-cd backend
-AETHELDESK_ENV=test python -m uvicorn main:app --host 0.0.0.0 --port 8000
+uv sync --frozen
+```
+
+Run the backend locally without Docker:
+
+```bash
+AETHELDESK_ENV=test uv run uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 
 Open the app from each device:
@@ -67,23 +86,31 @@ http://<your-mac-ip>:8000/room/<room-id>
 
 `AETHELDESK_ENV=test` uses the test/local path and avoids requiring a production secret while you work locally. Outside pytest or test mode, set a real `AETHELDESK_SECRET_KEY` before starting the app.
 
-### Target Local uv Run Flow
+## Frontend Development
 
-After Task 3 lands the `uv` project files, install locked dependencies with:
-
-```bash
-uv sync --frozen
-```
-
-Run the default quick test gate with:
+Install frontend dependencies from the lockfile:
 
 ```bash
-uv run pytest -q
+npm ci
 ```
 
-Use `uv run` for local app and test commands once that tooling exists. Do not treat `requirements*.txt` as authoritative after the `uv` migration unless a later task documents them as exported compatibility files.
+Start Vite:
 
-### Docker Self-Host Run Flow
+```bash
+npm run dev
+```
+
+The Vite dev server uses `vite.config.js` with `root: "frontend"`. It proxies `/api` to `http://127.0.0.1:8000` and `/ws` to `ws://127.0.0.1:8000`, including WebSocket upgrade support for `/ws`. Start the FastAPI backend on port `8000` before using API or room sync through Vite.
+
+Build production assets with:
+
+```bash
+npm run build
+```
+
+The build writes to `frontend/dist`. FastAPI serves hashed assets from `frontend/dist/assets` when present. Do not commit generated `frontend/dist` unless a release process explicitly asks for it.
+
+## Docker Self-Host Setup
 
 Docker Compose runs the FastAPI app and Redis:
 
@@ -105,17 +132,7 @@ curl -fsS http://127.0.0.1:${APP_PORT:-8000}/health
 docker compose exec redis redis-cli CONFIG GET appendonly appendfsync
 ```
 
-The Redis config should report `appendonly yes` and `appendfsync everysec`. The compose file persists Redis data in the `redis-data` volume, which supports restart tolerance for current room state only.
-
-### Target Frontend Build Flow
-
-After Task 7 lands the Vite migration, build the vanilla ES module frontend with:
-
-```bash
-npm run build
-```
-
-This command is documented as a target workflow. It is not expected to work before the Vite package files exist.
+Task 11 hardening now builds frontend assets in Docker with `npm ci`, runs the final Python app as a non-root `appuser`, persists Redis in the `redis-data` volume, and checks Redis health with `PING`, `appendonly yes`, and `appendfsync everysec`. Redis config lives in `docker/redis/redis.conf`.
 
 Required and useful environment variables:
 
@@ -129,19 +146,49 @@ Required and useful environment variables:
 | `AETHELDESK_SECRET_KEY` | none | Required outside pytest/test mode for Room PIN tokens. |
 | `AETHELDESK_TRUST_PROXY` | off | Set to `1` only behind a trusted reverse proxy so `X-Forwarded-For` is used for PIN rate-limit identity. Leave off when the app is exposed directly. |
 
+## Dependency Files And Generated Files
+
+| File | Status |
+|---|---|
+| `pyproject.toml` | Authoritative Python project metadata, runtime dependencies, dev group, Ruff config, and Pyright config. |
+| `uv.lock` | Authoritative locked Python dependency graph. |
+| `requirements.txt` | Exported compatibility file for Docker image installation. Keep it aligned with `pyproject.toml`, but do not treat it as the source of truth. |
+| `requirements-dev.txt` | Exported compatibility file for older local scripts. Keep it aligned when Python dev dependencies change, but do not treat it as authoritative. |
+| `package.json` | Authoritative frontend scripts and direct Vite dev dependency. |
+| `package-lock.json` | Authoritative locked frontend dependency graph. |
+| `frontend/dist/` | Generated Vite production output. Build with `npm run build`; do not edit by hand. |
+| `.omo/evidence/` | Local task evidence artifacts. Append evidence during delegated tasks, but do not commit these files unless the orchestrator says to. |
+
+## CI Gates And QA Evidence
+
+CI and local release checks should cover these gates:
+
+1. `uv sync --frozen`
+2. `uv run ruff format --check .`
+3. `uv run ruff check .`
+4. `uv run pyright`
+5. `uv run pytest -q`
+6. `uv run playwright install chromium`
+7. `uv run pytest tests/e2e -m e2e --browser chromium -q`
+8. `npm ci`
+9. `npm run build`
+10. Docker Compose build, app health, and Redis AOF health where Docker is installed
+
+For delegated tasks, save concise command output or summaries under `.omo/evidence/task-{N}-{slug}.txt`. When a gate cannot run because the host lacks a tool, record the exact blocker and do not mark the gate as passed.
+
 ## Governance For Modernization
 
-The approved frontend modernization direction is Vite + vanilla ES modules. React, Vue, Svelte, and TypeScript remain out of scope unless separately approved. Webpack is not part of this plan.
+AethelDesk is now a Vite + vanilla ES module frontend with a FastAPI backend. React, Vue, Svelte, TypeScript, Webpack, SQL/accounts/analytics, Redis Streams, Celery, Kubernetes, TLS automation, and reverse-proxy config remain out of scope unless separately approved.
 
-Redis remains mandatory for Docker/prod and cross-worker behavior. The in-memory fallback is only for tests and local no-Redis development until it is isolated by later runtime work.
+Redis remains mandatory for Docker/prod and cross-worker behavior. The in-memory fallback is only for tests and local no-Redis development.
 
-The UI should become Korean-primary as modernization continues. This plan does not add a full i18n toggle.
+Korean-primary copy is the UI policy. Interactive controls, validation errors, live regions, and connection or location status should use Korean-first wording. Keep the brand name `AethelDesk`, the security acronym `PIN`, YouTube naming, storage keys, API fields, and route names stable. See [`docs/ux/audit.md`](docs/ux/audit.md) for Task 9 findings and the Task 10 implementation summary.
 
 External frontend dependency policy:
 
 * The YouTube iframe API remains allowed for focus music.
-* Tailwind CDN usage should be replaced with local build assets after Vite parity is reached.
-* Google Fonts should be self-hosted or given a local fallback in a later task.
+* The current frontend build should prefer local assets through Vite.
+* Google Fonts should be self-hosted or given a local fallback in a later approved task.
 
 Still out of scope for this modernization:
 
@@ -152,7 +199,7 @@ Still out of scope for this modernization:
 
 ## Room PIN Behavior
 
-Create and join both require a PIN of 4-64 characters. Room ids are restricted to `[A-Z0-9]` (1-64 chars) after normalization, so they cannot inject extra Redis key segments. On success, the frontend stores the opaque token in `sessionStorage` under `room_token:{ROOM_ID}` and uses it on the room WebSocket URL.
+Create and join both require a PIN of 4-64 characters. Room ids are restricted to `[A-Z0-9]` after normalization, so they cannot inject extra Redis key segments. On success, the frontend stores the opaque token in `sessionStorage` under `room_token:{ROOM_ID}` and uses it on the room WebSocket URL.
 
 Plaintext PIN values are sent only with the create or join request. They are not stored in Redis, room state, WebSocket payloads, `sessionStorage`, or `localStorage` after the request completes. Authentication failures use generic responses, including the Korean room error `입장할 수 없습니다`, so the UI does not reveal whether a room exists.
 
@@ -161,30 +208,17 @@ Plaintext PIN values are sent only with the create or join request. They are not
 Default Python tests exclude browser E2E through `pytest.ini`:
 
 ```bash
-python -m pytest -q
-```
-
-After Task 3, the same quick gate should run through `uv`:
-
-```bash
 uv run pytest -q
 ```
 
-Install the Chromium browser for Python Playwright, then run the browser suite:
+Install Chromium for Playwright, then run the browser suite:
 
 ```bash
-python -m playwright install chromium
-python -m pytest tests/e2e -m e2e --browser chromium -q
+uv run playwright install chromium
+uv run pytest tests/e2e -m e2e --browser chromium -q
 ```
 
-For a quick static JavaScript syntax check before the Vite migration:
-
-```bash
-node --check frontend/app.js
-node --check frontend/scenes.js
-```
-
-After Vite migration, use the frontend build gate:
+Run the frontend production build gate:
 
 ```bash
 npm run build
@@ -192,13 +226,13 @@ npm run build
 
 ## Reverse Proxy WebSocket Notes
 
-When placing AethelDesk behind a reverse proxy, preserve WebSocket upgrades for `/ws/*`:
+Reverse-proxy config changes are out of scope for this modernization. If you place AethelDesk behind an existing trusted reverse proxy, preserve WebSocket upgrades for `/ws/*`:
 
 * Forward `Upgrade` and `Connection` headers.
-* Preserve `Host` and `X-Forwarded-For`.
+* Preserve `Host` and overwrite `X-Forwarded-For` with the real client IP.
 * Disable response buffering on WebSocket paths.
 * Keep WebSocket timeouts long enough for focus sessions.
-* Set `AETHELDESK_TRUST_PROXY=1` so the app reads the real client IP from `X-Forwarded-For` for PIN rate limiting. Only do this when the proxy is trusted and overwrites the header.
+* Set `AETHELDESK_TRUST_PROXY=1` only when the proxy is trusted and overwrites the header.
 
 Without these settings, room sync can fail or disconnect unexpectedly.
 
@@ -215,40 +249,52 @@ Without these settings, room sync can fail or disconnect unexpectedly.
 
 | Symptom | Check |
 |---|---|
+| `npm run dev` loads the page but API calls fail | Start FastAPI on `127.0.0.1:8000`; Vite proxies `/api` to that backend. |
+| Room sync fails through Vite dev server | Confirm the backend is on port `8000` and the Vite `/ws` proxy is active. Browser WebSockets should connect through `/ws/{ROOM_ID}?token=...`. |
+| Built pages load without JS | Run `npm run build`, confirm `frontend/dist/assets` exists, and restart FastAPI or Docker so the new assets are served. |
+| `/assets/*` returns 404 in production | The Vite build output is missing from `frontend/dist`; rebuild locally or check the Docker frontend build stage. |
 | `/health` returns 503 or rooms cannot sync | Redis is unavailable. Check the Redis container, `REDIS_URL`, and `docker compose ps`. |
+| Redis health never becomes healthy in Compose | Check `docker/redis/redis.conf` and `docker compose exec redis redis-cli CONFIG GET appendonly appendfsync`; expected values are `yes` and `everysec`. |
 | Startup fails with missing `AETHELDESK_SECRET_KEY` | Set a real secret in `.env` for Docker or production. Only pytest/test mode can use the built-in test secret. |
-| Playwright says Chromium is missing | Run `python -m playwright install chromium`. If the host warns about missing system libraries, install the OS packages named by Playwright. |
-| Tests fail with missing `astral` | Run `python -m pip install -r requirements-dev.txt`; `requirements-dev.txt` includes `astral`. |
-| `uv sync --frozen` fails | Task 3 tooling is not present yet, or the lockfile is out of date. Use the current local Python flow until Task 3 is merged. |
-| `npm run build` fails because `package.json` is missing | Task 7 Vite migration is not present yet. This command is a target gate, not a current static-frontend command. |
+| Playwright says Chromium is missing | Run `uv run playwright install chromium`. If the host warns about missing system libraries, install the OS packages named by Playwright. |
+| `uv sync --frozen` fails | The lockfile is out of date or `uv.lock` does not match `pyproject.toml`. Update dependencies intentionally, then refresh the lockfile. |
+| Docker commands fail with `docker: command not found` | Docker is not installed on this host. Record the blocker as evidence and do not claim Compose passed. |
 
 ## Development Notes
 
-The app is intentionally small. Today it is classic-script based; the approved target is Vite + vanilla ES modules:
+The app is intentionally small. The current stack is FastAPI, Redis, Vite, and vanilla ES modules:
 
 ```text
 aetheldesk/
 |-- backend/
-|   |-- auth.py
-|   |-- config.py
-|   |-- connection_manager.py
-|   |-- event_bus.py
+|   |-- frontend_routes.py
 |   |-- main.py
+|   |-- redis_contract.py
+|   |-- room_routes.py
+|   |-- room_service.py
 |   |-- room_store.py
 |   |-- scheduler.py
-|   `-- state.py
+|   |-- state.py
+|   `-- websocket_handler.py
 |-- frontend/
 |   |-- app.js
 |   |-- lobby.html
+|   |-- lobby.js
 |   |-- room.html
-|   `-- scenes.js
+|   |-- scenes.js
+|   `-- src/
 |-- tests/
 |   |-- e2e/
-|   |-- test_backend_state.py
-|   `-- test_frontend_static.py
+|   |-- test_backend_routes.py
+|   |-- test_frontend_static.py
+|   `-- test_websocket_redis.py
+|-- docker/redis/redis.conf
 |-- docker-compose.yml
-|-- requirements.txt
-`-- requirements-dev.txt
+|-- Dockerfile
+|-- package.json
+|-- package-lock.json
+|-- pyproject.toml
+`-- uv.lock
 ```
 
 ## Contributing
@@ -257,24 +303,9 @@ Contributions are welcome. To keep the project small and predictable:
 
 1. Open an issue first for anything beyond a small fix, so scope can be agreed before code.
 2. Fork, branch from `main`, and keep changes focused.
-3. Match the approved modernization scope: plain Python, vanilla JavaScript, Vite + vanilla ES modules only when frontend tooling lands, and no new heavyweight runtime dependencies without agreement.
-4. Add or update tests for behavior changes and make sure the relevant suite passes:
-
-   ```bash
-   python -m pip install -r requirements-dev.txt
-   python -m pytest -q
-   node --check frontend/app.js
-   node --check frontend/scenes.js
-   ```
-
-5. After Task 3 and Task 7 land, use the target gates too:
-
-   ```bash
-   uv sync --frozen
-   uv run pytest -q
-   npm run build
-   ```
-
+3. Match the approved scope: FastAPI, Redis, Vite, vanilla JavaScript, and no new heavyweight runtime dependencies without agreement.
+4. Add or update tests for behavior changes and make sure the relevant suite passes.
+5. Run the command matrix gates that match your change.
 6. Open a pull request describing the change and how you verified it.
 
 Please keep proposals within the project's intent. See [Governance For Modernization](#governance-for-modernization) before suggesting larger systems.
