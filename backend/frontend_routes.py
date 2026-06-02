@@ -19,14 +19,20 @@ _runtime = cast(Any, _backend_module("room_service")._runtime)
 router = APIRouter()
 
 
+def _frontend_file(filename: str) -> str:
+    runtime = _runtime()
+    built_path = os.path.join(runtime.FRONTEND_DIST, filename)
+    if os.path.exists(built_path):
+        return built_path
+    return os.path.join(runtime.FRONTEND, filename)
+
+
 @router.get("/")
 async def lobby():
-    runtime = _runtime()
-    return FileResponse(os.path.join(runtime.FRONTEND, "lobby.html"))
+    return FileResponse(_frontend_file("lobby.html"))
 
 
 @router.get("/room/{room_id}")
 async def room_page(room_id: str):
     _ = room_id
-    runtime = _runtime()
-    return FileResponse(os.path.join(runtime.FRONTEND, "room.html"))
+    return FileResponse(_frontend_file("room.html"))

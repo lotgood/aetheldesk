@@ -78,7 +78,9 @@ async def ws_endpoint(websocket: WebSocket, room_id: str):
                 await runtime.connections.broadcast_json(normalized, {"type": "state", "data": current_state})
                 await publish_room_state(normalized, current_state)
             except RedisUnavailable:
-                await websocket.close(code=runtime.WS_OPERATIONAL_CLOSE_CODE, reason=runtime.WS_OPERATIONAL_CLOSE_REASON)
+                await websocket.close(
+                    code=runtime.WS_OPERATIONAL_CLOSE_CODE, reason=runtime.WS_OPERATIONAL_CLOSE_REASON
+                )
                 return
             except (json.JSONDecodeError, TypeError, ValueError, KeyError):
                 runtime.logger.exception("handle() failed for room %s", room_id)

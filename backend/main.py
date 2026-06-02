@@ -63,7 +63,8 @@ get_celestial_state = cast(GetCelestialState, import_module("celestial").get_cel
 
 logger = logging.getLogger("aetheldesk")
 
-FRONTEND = os.path.join(os.path.dirname(__file__), "../frontend")
+FRONTEND = os.path.abspath(os.path.join(os.path.dirname(__file__), "../frontend"))
+FRONTEND_DIST = os.path.join(FRONTEND, "dist")
 MAX_ROOMS = 50
 ROOM_TTL = config.ROOM_TTL_SECONDS
 WS_AUTH_CLOSE_CODE = 1008
@@ -93,4 +94,6 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(frontend_router)
 app.include_router(room_router)
 app.include_router(websocket_router)
+if os.path.isdir(os.path.join(FRONTEND_DIST, "assets")):
+    app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="vite-assets")
 app.mount("/", StaticFiles(directory=FRONTEND), name="static")

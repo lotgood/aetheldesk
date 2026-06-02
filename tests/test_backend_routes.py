@@ -1,12 +1,14 @@
 import builtins
 import json
 from collections.abc import Generator
+from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 from backend import auth
+from backend import frontend_routes
 from backend import main as backend_main
 from backend.room_store import RoomStore
 
@@ -185,3 +187,22 @@ def test_root_and_room_routes_serve_static_pages(api_client: tuple[TestClient, F
     assert room.status_code == 200
     assert "text/html" in room.headers.get("content-type", "")
     assert 'id="room-label"' in room.text
+
+
+def test_frontend_file_prefers_vite_dist_and_falls_back_to_source(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    source_dir = tmp_path / "frontend"
+    dist_dir = source_dir / "dist"
+    source_dir.mkdir()
+    dist_dir.mkdir()
+    source_file = source_dir / "room.html"
+    built_file = dist_dir / "room.html"
+    source_file.write_text("source room", encoding="utf-8")
+    built_file.write_text("built room", encoding="utf-8")
+    monkeypatch.setattr(backend_main, "FRONTEND", str(source_dir))
+    monkeypatch.setattr(backend_main, "FRONTEND_DIST", str(dist_dir))
+
+    assert frontend_routes._frontend_file("room.html") == str(built_file)
+
+    built_file.unlink()
+
+    assert frontend_routes._frontend_file("room.html") == str(source_file)

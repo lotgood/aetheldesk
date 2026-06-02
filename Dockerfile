@@ -1,3 +1,11 @@
+FROM node:20-alpine AS frontend-build
+
+WORKDIR /app
+
+COPY package.json package-lock.json* vite.config.js /app/
+COPY frontend /app/frontend
+RUN npm install && npm run build
+
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -10,6 +18,7 @@ RUN python -m pip install --no-cache-dir -r /app/requirements.txt
 
 COPY backend /app/backend
 COPY frontend /app/frontend
+COPY --from=frontend-build /app/frontend/dist /app/frontend/dist
 
 WORKDIR /app/backend
 EXPOSE 8000

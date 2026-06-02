@@ -216,7 +216,9 @@ async def ensure_room_events(room_id: str) -> None:
     if task is not None and not task.done():
         return
     await runtime.event_bus.sync_room_from_store(normalized)
-    runtime.event_subscription_tasks[normalized] = asyncio.create_task(runtime.event_bus.consume_room_events(normalized))
+    runtime.event_subscription_tasks[normalized] = asyncio.create_task(
+        runtime.event_bus.consume_room_events(normalized)
+    )
 
 
 async def stop_room_events(room_id: str) -> None:

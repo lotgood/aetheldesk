@@ -97,13 +97,13 @@ def test_scene_system_is_extracted_to_classic_global():
     assert "function renderScene(c)" not in app_source
 
 
-def test_static_pages_keep_classic_script_loading_path():
+def test_static_pages_keep_vite_module_loading_path():
     room = ROOM_HTML.read_text()
     lobby = LOBBY_HTML.read_text()
 
     youtube_script = '<script src="https://www.youtube.com/iframe_api"></script>'
-    scenes_script = '<script src="/scenes.js"></script>'
-    app_script = '<script src="/app.js"></script>'
+    scenes_script = '<script type="module" src="/scenes.js"></script>'
+    app_script = '<script type="module" src="/app.js"></script>'
 
     assert '<script src="https://cdn.tailwindcss.com"></script>' in room
     assert '<script src="https://cdn.tailwindcss.com"></script>' in lobby
