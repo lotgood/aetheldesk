@@ -44,6 +44,8 @@ BackendState = TypedDict(
     },
 )
 
+BACKEND_STATE_KEYS = frozenset(BackendState.__annotations__.keys())
+
 
 def _parse_iso(iso: str) -> datetime:
     """Parse client ISO string; assume UTC when tz is missing."""

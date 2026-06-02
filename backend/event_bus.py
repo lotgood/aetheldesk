@@ -6,28 +6,14 @@ from typing import Any, Protocol, TypeVar, cast
 try:
     from backend import redis_contract
     from backend.connection_manager import LocalConnectionManager
-    from backend.state import BackendState
+    from backend.state import BACKEND_STATE_KEYS, BackendState
 except ModuleNotFoundError:
     import redis_contract
     from connection_manager import LocalConnectionManager
-    from state import BackendState
+    from state import BACKEND_STATE_KEYS, BackendState
 
 
 STATE_SNAPSHOT_EVENT = "state_snapshot"
-STATE_SNAPSHOT_KEYS = frozenset(
-    {
-        "celestial",
-        "focus",
-        "paused",
-        "pomodoro_remaining",
-        "pomodoro_duration",
-        "break",
-        "break_remaining",
-        "sessions_done",
-        "music",
-        "time_override",
-    }
-)
 T = TypeVar("T")
 
 
@@ -161,7 +147,7 @@ class RedisStateEventBus:
         return event_id in self._recent_event_ids.get(room_id, [])
 
     def _is_state_snapshot(self, value: object) -> bool:
-        return isinstance(value, dict) and set(value.keys()) == STATE_SNAPSHOT_KEYS and isinstance(value.get("music"), dict)
+        return isinstance(value, dict) and set(value.keys()) == BACKEND_STATE_KEYS and isinstance(value.get("music"), dict)
 
     def _remember_event(self, room_id: str, event_id: str) -> None:
         recent = self._recent_event_ids.setdefault(room_id, [])

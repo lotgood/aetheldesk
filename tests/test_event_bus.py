@@ -212,3 +212,53 @@ def test_delta_payload_is_not_accepted_as_state_source():
 
     assert asyncio.run(bus.dispatch_envelope(delta)) is False
     assert decoded_messages(websocket) == []
+
+
+def test_snapshot_missing_required_key_is_rejected():
+    redis = FakeRedis()
+    manager = LocalConnectionManager()
+    websocket = DummyWebSocket()
+    manager.connect("room-a", cast(WebSocket, websocket))
+    bus = RedisStateEventBus(redis, worker_id="worker-a", connections=manager)
+    state = sample_state()
+    partial_state = dict(state)
+    partial_state.pop("time_override")
+    envelope = event_payload("room-a", "worker-b", "evt-missing", cast(BackendState, partial_state))
+
+    assert asyncio.run(bus.dispatch_envelope(envelope)) is False
+    assert decoded_messages(websocket) == []
+
+
+def test_snapshot_with_extra_key_is_rejected():
+    redis = FakeRedis()
+    manager = LocalConnectionManager()
+    websocket = DummyWebSocket()
+    manager.connect("room-a", cast(WebSocket, websocket))
+    bus = RedisStateEventBus(redis, worker_id="worker-a", connections=manager)
+    state = sample_state()
+    expanded_state = dict(state)
+    expanded_state["unexpected"] = True
+    envelope = event_payload("room-a", "worker-b", "evt-extra", cast(BackendState, expanded_state))
+
+    assert asyncio.run(bus.dispatch_envelope(envelope)) is False
+    assert decoded_messages(websocket) == []
+
+
+def test_invalid_envelope_is_rejected_safely():
+    redis = FakeRedis()
+    manager = LocalConnectionManager()
+    websocket = DummyWebSocket()
+    manager.connect("room-a", cast(WebSocket, websocket))
+    bus = RedisStateEventBus(redis, worker_id="worker-a", connections=manager)
+    state = sample_state()
+    invalid_version = event_payload("room-a", "worker-b", "evt-invalid", state)
+    invalid_version["version"] = "0"
+
+    async def run() -> tuple[bool, bool, bool]:
+        invalid_first = await bus.dispatch_envelope(invalid_version)
+        invalid_second = await bus.dispatch_message("not-json")
+        invalid_third = await bus.dispatch_message(json.dumps(["wrong-shape"]))
+        return invalid_first, invalid_second, invalid_third
+
+    assert asyncio.run(run()) == (False, False, False)
+    assert decoded_messages(websocket) == []
