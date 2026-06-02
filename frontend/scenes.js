@@ -9,7 +9,10 @@ const sceneRAFs = {};
 
 (function initSceneBtn() {
   const btn = document.getElementById('btn-scene');
-  if (btn) btn.textContent = `◈ ${SCENE_LABELS[activeScene]}`;
+  if (btn) {
+    btn.textContent = `◈ ${SCENE_LABELS[activeScene]}`;
+    btn.setAttribute('aria-label', `장면 바꾸기: ${SCENE_LABELS[activeScene]}`);
+  }
   document.body.dataset.scene = activeScene === 'sky' ? '' : activeScene;
 })();
 
@@ -17,6 +20,10 @@ function stopScene(name) {
   if (sceneRAFs[name]) { cancelAnimationFrame(sceneRAFs[name]); delete sceneRAFs[name]; }
 }
 function stopAllScenes() { SCENES.forEach(s => stopScene(s)); }
+
+function prefersReducedMotion() {
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+}
 
 function renderScene(c) {
   lastCelestial = c;
@@ -49,7 +56,12 @@ function switchScene(name) {
   storeScene(name);
   document.body.dataset.scene = name === 'sky' ? '' : name;
   const btn = document.getElementById('btn-scene');
-  if (btn) btn.textContent = `◈ ${SCENE_LABELS[name]}`;
+  if (btn) {
+    btn.textContent = `◈ ${SCENE_LABELS[name]}`;
+    btn.setAttribute('aria-label', `장면 바꾸기: ${SCENE_LABELS[name]}`);
+  }
+  const status = document.getElementById('room-status');
+  if (status) status.textContent = `${SCENE_LABELS[name]} 장면으로 바꿨습니다.`;
   if (name !== 'sky' && lastCelestial) renderScene(lastCelestial);
 }
 
@@ -107,6 +119,7 @@ function makeBldg(x, groundY, w, h, bg) {
 }
 
 function cityScheduleWindowToggle() {
+  if (prefersReducedMotion()) return;
   if (cityToggleTimer) clearTimeout(cityToggleTimer);
   function toggle() {
     if (!cityBldgs || activeScene !== 'city') return;
@@ -178,7 +191,7 @@ function cityLoop(canvas) {
     }
   }
 
-  sceneRAFs.city = requestAnimationFrame(() => cityLoop(canvas));
+  if (!prefersReducedMotion()) sceneRAFs.city = requestAnimationFrame(() => cityLoop(canvas));
 }
 
 // ─── Beach scene ──────────────────────────────────────────────────────────────
@@ -279,7 +292,7 @@ function beachLoop(canvas) {
   wetG.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = wetG; ctx.fillRect(0, sandY, W, H * 0.032);
 
-  sceneRAFs.beach = requestAnimationFrame(() => beachLoop(canvas));
+  if (!prefersReducedMotion()) sceneRAFs.beach = requestAnimationFrame(() => beachLoop(canvas));
 }
 
 // ─── Forest scene ─────────────────────────────────────────────────────────────
@@ -290,7 +303,7 @@ function forestStart(canvas, c) {
   forestElev = c.elevation;
   forestTrees = forestMakeTrees(canvas.width, canvas.height);
   forestFireflies = forestMakeFireflies(canvas.width, canvas.height);
-  sceneRAFs.forest = requestAnimationFrame(ts => forestLoop(canvas, ts));
+  forestLoop(canvas, 0);
 }
 
 function forestOnCelestial(c) {
@@ -402,7 +415,7 @@ function forestLoop(canvas, ts) {
     ctx.fillStyle = haze; ctx.fillRect(0, H * 0.48, W, gY - H * 0.48);
   }
 
-  sceneRAFs.forest = requestAnimationFrame(ts2 => forestLoop(canvas, ts2));
+  if (!prefersReducedMotion()) sceneRAFs.forest = requestAnimationFrame(ts2 => forestLoop(canvas, ts2));
 }
 
 function resetForResize() {

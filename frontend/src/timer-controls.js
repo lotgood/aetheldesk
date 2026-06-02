@@ -4,9 +4,31 @@ export function fmtTime(sec) {
   return `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`;
 }
 
+function fmtSliderMinutes(value) {
+  const hours = Math.floor(value / 60);
+  const minutes = value % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
 export function createTimerControls({ getState, send }) {
   const timeSlider = byId("time-slider");
+  const timeValue = byId("time-value");
   let sliderTouchedAt = 0;
+
+  function updateSliderText(value) {
+    const label = fmtSliderMinutes(Number(value));
+    timeValue.textContent = label;
+    timeSlider.setAttribute("aria-valuetext", label);
+  }
+
+  function focusWhenShown(rowId, controlId, attempts = 40) {
+    const row = byId(rowId);
+    if (row.getAttribute("aria-hidden") === "false") {
+      setTimeout(() => byId(controlId).focus(), 120);
+      return;
+    }
+    if (attempts > 0) setTimeout(() => focusWhenShown(rowId, controlId, attempts - 1), 80);
+  }
 
   function setDur(minutes) {
     send({ type: "set_duration", minutes });
@@ -14,8 +36,10 @@ export function createTimerControls({ getState, send }) {
 
   function updateDurChips(activeMin) {
     document.querySelectorAll("#dur-chips button").forEach(btn => {
-      btn.classList.toggle("active", parseInt(btn.dataset.min, 10) === activeMin);
-      btn.dataset.active = String(parseInt(btn.dataset.min, 10) === activeMin);
+      const active = parseInt(btn.dataset.min, 10) === activeMin;
+      btn.classList.toggle("active", active);
+      btn.dataset.active = String(active);
+      btn.setAttribute("aria-pressed", active ? "true" : "false");
     });
   }
 
@@ -40,6 +64,7 @@ export function createTimerControls({ getState, send }) {
       const now = new Date();
       timeSlider.value = String(now.getHours() * 60 + now.getMinutes());
     }
+    updateSliderText(timeSlider.value);
   }
 
   function resetTime() {
@@ -47,6 +72,7 @@ export function createTimerControls({ getState, send }) {
     send({ type: "time_override", iso: null });
     const now = new Date();
     timeSlider.value = String(now.getHours() * 60 + now.getMinutes());
+    updateSliderText(timeSlider.value);
   }
 
   document.querySelectorAll("#dur-chips button").forEach(btn => {
@@ -54,21 +80,29 @@ export function createTimerControls({ getState, send }) {
       const minutes = parseInt(btn.dataset.min, 10);
       const state = getState();
       const activeMin = state ? Math.round(state.pomodoro_duration / 60) : null;
-      if (minutes === activeMin) send({ type: "focus_toggle" });
+      if (minutes === activeMin) {
+        send({ type: "focus_toggle" });
+        focusWhenShown("focus-row", "btn-pause-timer");
+      }
       else setDur(minutes);
     });
   });
 
   timeSlider.addEventListener("input", event => {
     sliderTouchedAt = Date.now();
+    updateSliderText(event.target.value);
     sendOverride(Number(event.target.value));
   });
   timeSlider.addEventListener("dblclick", resetTime);
   byId("btn-reset-time").addEventListener("click", resetTime);
-  byId("focus-btn").addEventListener("click", () => send({ type: "focus_toggle" }));
+  byId("focus-btn").addEventListener("click", () => {
+    send({ type: "focus_toggle" });
+    focusWhenShown("focus-row", "btn-pause-timer");
+  });
   byId("btn-pause-timer").addEventListener("click", () => send({ type: "focus_pause" }));
   byId("btn-cancel-timer").addEventListener("click", () => send({ type: "focus_cancel" }));
   byId("btn-skip-break").addEventListener("click", () => send({ type: "skip_break" }));
+  updateSliderText(timeSlider.value);
 
   return { syncSlider, updateDurChips };
 }

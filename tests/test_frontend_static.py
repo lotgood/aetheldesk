@@ -171,3 +171,60 @@ def test_static_pages_keep_vite_module_loading_path():
     assert app_script in room
     assert lobby_script in lobby
     assert room.index(youtube_script) < room.index(app_script)
+
+
+def test_task_10_accessibility_markup_and_live_regions_present():
+    room = ROOM_HTML.read_text()
+    lobby = LOBBY_HTML.read_text()
+
+    assert '<label for="pin-input"' in lobby
+    assert 'id="lobby-error"' in lobby and 'aria-live="polite"' in lobby
+    assert 'aria-expanded="false"' in lobby and 'aria-controls="code-section"' in lobby
+    assert 'id="code-section" aria-hidden="true"' in lobby
+    assert 'id="room-input"' in lobby and 'tabindex="-1"' in lobby
+
+    assert 'id="conn-status"' in room and 'aria-live="polite"' in room
+    assert 'id="room-status"' in room and 'role="status"' in room
+    assert 'id="timer-status"' in room and 'role="status"' in room
+    assert 'id="time-slider"' in room and 'aria-valuetext="12:00"' in room
+    assert 'id="track-error"' in room and 'aria-live="polite"' in room
+    assert 'id="room-auth"' in room and 'role="dialog"' in room and 'aria-modal="true"' in room
+    assert 'id="exit-confirm"' in room and 'role="alertdialog"' in room
+    assert 'id="yt-frame"' in room and 'inert' in room
+    assert '@media (prefers-reduced-motion: reduce)' in room
+
+
+def test_task_10_accessibility_behavior_is_module_owned():
+    app_source = APP_JS.read_text()
+    dom_source = (SRC / "dom.js").read_text()
+    auth_source = ROOM_AUTH_JS.read_text()
+    renderer_source = ROOM_RENDERER_JS.read_text()
+    music_source = MUSIC_YOUTUBE_JS.read_text()
+    socket_source = ROOM_SOCKET_JS.read_text()
+    scenes_source = SCENES_JS.read_text()
+    lobby_sky_source = LOBBY_SKY_JS.read_text()
+
+    assert "export function createFocusTrap" in dom_source
+    assert "export function setHiddenInteraction" in dom_source
+    assert "createFocusTrap(authPrompt" in auth_source
+    assert "createFocusTrap(byId(\"exit-confirm\")" in app_source
+    assert "setHiddenInteraction(byId(\"exit-confirm\"), true)" in app_source
+    assert "setHiddenInteraction(breakRow, true)" in renderer_source
+    assert "setHiddenInteraction(focusRow, false)" in renderer_source
+    assert "setHiddenInteraction(byId(\"music-bar\"), true)" in music_source
+    assert "YouTube 링크 또는 11자리 영상 ID" in music_source
+    assert "connStatus.textContent" in socket_source
+    assert "prefersReducedMotion" in scenes_source
+    assert "prefersReducedMotion" in lobby_sky_source
+
+
+def test_youtube_player_replacement_stays_hidden_from_keyboard_navigation():
+    music_source = MUSIC_YOUTUBE_JS.read_text()
+
+    assert "function hideYouTubeFrame()" in music_source
+    assert "ytPlayer?.getIframe?.() || byId(\"yt-frame\")" in music_source
+    assert 'frame?.setAttribute("aria-hidden", "true")' in music_source
+    assert 'frame?.setAttribute("tabindex", "-1")' in music_source
+    assert 'frame?.toggleAttribute("inert", true)' in music_source
+    assert "events: { onReady: () => { hideYouTubeFrame(); ytReady = true;" in music_source
+    assert "setTimeout(hideYouTubeFrame, 0);" in music_source

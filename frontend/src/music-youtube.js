@@ -1,4 +1,4 @@
-import { byId } from "./dom.js";
+import { byId, setHiddenInteraction } from "./dom.js";
 import { storePlaylist } from "./storage.js";
 
 export function parseYtId(input) {
@@ -13,14 +13,23 @@ export function createMusicController({ playlist, getState, send }) {
   let ytReady = false;
   let pendingVideoId = null;
   const trackInput = byId("track-input");
+  const trackError = byId("track-error");
   const actionBarEl = byId("action-bar");
   const trackRowEl = byId("track-row");
+
+  function hideYouTubeFrame() {
+    const frame = ytPlayer?.getIframe?.() || byId("yt-frame");
+    frame?.setAttribute("aria-hidden", "true");
+    frame?.setAttribute("tabindex", "-1");
+    frame?.toggleAttribute("inert", true);
+  }
 
   function showMusicBar() {
     const bar = byId("music-bar");
     bar.style.opacity = "1";
     bar.style.pointerEvents = "auto";
     bar.style.transform = "translateY(0)";
+    setHiddenInteraction(bar, false);
   }
 
   function loadVideo(id) {
@@ -50,8 +59,10 @@ export function createMusicController({ playlist, getState, send }) {
     ytPlayer = new YT.Player("yt-frame", {
       videoId: getState()?.music?.video_id ?? "jfKfPfyJRdk",
       playerVars: { autoplay: 0, controls: 0, playsinline: 1 },
-      events: { onReady: () => { ytReady = true; if (getState()) syncYT(getState().music); } },
+      events: { onReady: () => { hideYouTubeFrame(); ytReady = true; if (getState()) syncYT(getState().music); } },
     });
+    hideYouTubeFrame();
+    setTimeout(hideYouTubeFrame, 0);
   }
 
   window.onYouTubeIframeAPIReady = initYouTubePlayer;
@@ -60,20 +71,25 @@ export function createMusicController({ playlist, getState, send }) {
   function openTrackRow() {
     actionBarEl.style.display = "none";
     trackRowEl.style.display = "flex";
+    setHiddenInteraction(trackRowEl, false);
     trackInput.value = "";
     trackInput.style.borderBottomColor = "";
+    trackError.textContent = "";
     setTimeout(() => trackInput.focus(), 50);
   }
 
   function closeTrackRow() {
+    setHiddenInteraction(trackRowEl, true);
     trackRowEl.style.display = "none";
     actionBarEl.style.display = "";
+    trackError.textContent = "";
   }
 
   function submitTrack() {
     const id = parseYtId(trackInput.value.trim());
     if (!id) {
       trackInput.style.borderBottomColor = "rgba(255,80,80,0.7)";
+      trackError.textContent = "YouTube 링크 또는 11자리 영상 ID를 입력해 주세요.";
       return;
     }
     if (!playlist.ids.includes(id)) {
@@ -105,6 +121,8 @@ export function createMusicController({ playlist, getState, send }) {
     send({ type: "music_skip", video_id: id });
   });
 
+  setHiddenInteraction(byId("music-bar"), true);
+  setHiddenInteraction(trackRowEl, true);
   if (playlist.savedPlaylist) showMusicBar();
 
   return { syncYT };

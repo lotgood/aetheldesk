@@ -1,4 +1,4 @@
-import { byId, hideFlex, showFlex } from "./dom.js";
+import { byId, createFocusTrap, hideFlex, showFlex } from "./dom.js";
 import { clearRoomToken, storeRoomToken } from "./storage.js";
 
 export function createRoomAuth(roomId, onAuthenticated) {
@@ -6,15 +6,20 @@ export function createRoomAuth(roomId, onAuthenticated) {
   const roomPinInput = byId("room-pin-input");
   const roomAuthError = byId("room-auth-error");
   const roomPinSubmit = byId("room-pin-submit");
+  const authTrap = createFocusTrap(authPrompt, {
+    initialFocus: roomPinInput,
+    onCancel: () => roomPinInput.focus(),
+  });
 
   function show(message) {
     showFlex(authPrompt);
     roomAuthError.textContent = message || "";
     roomPinInput.value = "";
-    setTimeout(() => roomPinInput.focus(), 50);
+    authTrap.activate();
   }
 
   function hide() {
+    authTrap.deactivate();
     hideFlex(authPrompt);
     roomAuthError.textContent = "";
     roomPinInput.value = "";

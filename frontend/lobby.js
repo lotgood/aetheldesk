@@ -62,10 +62,17 @@ let codeOpen = false;
 document.getElementById("code-toggle").addEventListener("click", () => {
   codeOpen = !codeOpen;
   const section = document.getElementById("code-section");
+  const toggle = document.getElementById("code-toggle");
+  const roomInput = document.getElementById("room-input");
+  const joinButton = document.getElementById("btn-join");
   section.style.maxHeight = codeOpen ? "120px" : "0";
   section.style.opacity = codeOpen ? "1" : "0";
   section.style.pointerEvents = codeOpen ? "auto" : "none";
-  if (codeOpen) setTimeout(() => document.getElementById("room-input").focus(), 380);
+  section.setAttribute("aria-hidden", codeOpen ? "false" : "true");
+  toggle.setAttribute("aria-expanded", codeOpen ? "true" : "false");
+  roomInput.tabIndex = codeOpen ? 0 : -1;
+  joinButton.tabIndex = codeOpen ? 0 : -1;
+  if (codeOpen) setTimeout(() => roomInput.focus(), 380);
 });
 
 document.getElementById("room-input").addEventListener("keydown", event => {

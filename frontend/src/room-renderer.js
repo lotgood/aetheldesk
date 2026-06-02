@@ -1,4 +1,4 @@
-import { byId } from "./dom.js";
+import { byId, setHiddenInteraction } from "./dom.js";
 import { fmtTime } from "./timer-controls.js";
 
 const SAT_RADIUS = 58;
@@ -7,6 +7,10 @@ export function createRoomRenderer({ sceneController }) {
   let celestialPos = null;
   let cloudState = null;
   let cloudRAF = null;
+
+  function prefersReducedMotion() {
+    return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  }
 
   function renderCelestial(c) {
     document.body.style.setProperty("--sky-top", c.gradient[0]);
@@ -83,10 +87,11 @@ export function createRoomRenderer({ sceneController }) {
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     for (const cloud of cloudState) {
-      cloud.x += cloud.speed;
+      if (!prefersReducedMotion()) cloud.x += cloud.speed;
       if (cloud.x - cloud.w > canvas.width) cloud.x = -cloud.w;
       drawCloud(ctx, cloud.x, cloud.y, cloud.w, cloud.h);
     }
+    if (prefersReducedMotion()) return;
     cloudRAF = requestAnimationFrame(animateClouds);
   }
 
@@ -120,31 +125,58 @@ export function createRoomRenderer({ sceneController }) {
     const breakRow = byId("break-row");
     const focusRow = byId("focus-row");
     const pauseBtn = byId("btn-pause-timer");
+    const skipBreakBtn = byId("btn-skip-break");
+    const timerStatus = byId("timer-status");
+    const activeEl = document.activeElement;
 
     if (focus) {
+      const shouldMoveFocus = activeEl === btn || activeEl === document.body || activeEl === document.documentElement || durChips.contains(activeEl);
       btn.style.opacity = "0"; btn.style.pointerEvents = "none";
       durChips.style.opacity = "0"; durChips.style.pointerEvents = "none";
       pom.style.opacity = "1"; pom.style.pointerEvents = "auto";
+      setHiddenInteraction(btn, true);
+      setHiddenInteraction(durChips, true);
+      setHiddenInteraction(pom, false);
       pomTime.textContent = fmtTime(remaining);
       pomTime.style.opacity = paused ? "0.45" : "1";
       breakRow.style.opacity = "0"; breakRow.style.pointerEvents = "none";
       focusRow.style.opacity = "1"; focusRow.style.pointerEvents = "auto";
-      pauseBtn.textContent = paused ? "재개" : "정지";
+      setHiddenInteraction(breakRow, true);
+      setHiddenInteraction(focusRow, false);
+      pauseBtn.textContent = paused ? "재개" : "일시정지";
+      timerStatus.textContent = paused ? "집중 타이머가 일시정지되었습니다." : `집중 중입니다. 남은 시간 ${fmtTime(remaining)}.`;
+      if (shouldMoveFocus) setTimeout(() => pauseBtn.focus(), 120);
     } else if (isBreak) {
+      const shouldMoveFocus = activeEl === btn || activeEl === document.body || activeEl === document.documentElement || durChips.contains(activeEl) || focusRow.contains(activeEl);
       btn.style.opacity = "0"; btn.style.pointerEvents = "none";
       durChips.style.opacity = "0"; durChips.style.pointerEvents = "none";
       pom.style.opacity = "1"; pom.style.pointerEvents = "auto";
+      setHiddenInteraction(btn, true);
+      setHiddenInteraction(durChips, true);
+      setHiddenInteraction(pom, false);
       pomTime.textContent = fmtTime(breakRemaining);
       pomTime.style.opacity = "1";
       breakRow.style.opacity = "1"; breakRow.style.pointerEvents = "auto";
       focusRow.style.opacity = "0"; focusRow.style.pointerEvents = "none";
+      setHiddenInteraction(breakRow, false);
+      setHiddenInteraction(focusRow, true);
+      timerStatus.textContent = `휴식 중입니다. 남은 시간 ${fmtTime(breakRemaining)}.`;
+      if (shouldMoveFocus) setTimeout(() => skipBreakBtn.focus(), 120);
     } else {
+      const shouldMoveFocus = pom.contains(activeEl);
       btn.style.opacity = "1"; btn.style.pointerEvents = "auto";
       durChips.style.opacity = "1"; durChips.style.pointerEvents = "auto";
       pom.style.opacity = "0"; pom.style.pointerEvents = "none";
+      setHiddenInteraction(btn, false);
+      setHiddenInteraction(durChips, false);
+      setHiddenInteraction(pom, true);
       pomTime.style.opacity = "1";
       breakRow.style.opacity = "0"; breakRow.style.pointerEvents = "none";
       focusRow.style.opacity = "0"; focusRow.style.pointerEvents = "none";
+      setHiddenInteraction(breakRow, true);
+      setHiddenInteraction(focusRow, true);
+      timerStatus.textContent = "집중 타이머가 대기 중입니다.";
+      if (shouldMoveFocus) setTimeout(() => btn.focus(), 120);
     }
   }
 
@@ -170,6 +202,10 @@ export function createRoomRenderer({ sceneController }) {
     const position = count % 4 || 4;
     el.textContent = "●".repeat(position) + "○".repeat(4 - position);
   }
+
+  setHiddenInteraction(byId("pomodoro"), true);
+  setHiddenInteraction(byId("break-row"), true);
+  setHiddenInteraction(byId("focus-row"), true);
 
   return { renderCelestial, renderFocus, renderSatellite, renderSessions, resetForResize };
 }

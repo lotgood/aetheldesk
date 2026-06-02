@@ -107,11 +107,14 @@ function tickClouds(dayF) {
   }
 }
 
+function prefersReducedMotion() {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+}
+
 export function startLobbySky() {
   let startTime = null;
-  function frame(now) {
-    if (!startTime) startTime = now;
-    const t = ((now - startTime) % CYCLE_MS) / CYCLE_MS;
+
+  function render(t, moveClouds) {
     const sky = skyAt(t);
     document.body.style.background = `linear-gradient(to bottom, ${sky.top}, ${sky.bot})`;
     const color = NIGHT_COLOR.map((n, i) => Math.round(lerpN(n, DAY_COLOR[i], sky.dayF)));
@@ -125,8 +128,19 @@ export function startLobbySky() {
       stars.style.opacity = "0";
     }
     updateArc(t, sky.dayF);
-    tickClouds(sky.dayF);
+    if (moveClouds) tickClouds(sky.dayF);
+  }
+
+  function frame(now) {
+    if (!startTime) startTime = now;
+    const t = ((now - startTime) % CYCLE_MS) / CYCLE_MS;
+    render(t, true);
     requestAnimationFrame(frame);
+  }
+
+  if (prefersReducedMotion()) {
+    render(0.5, false);
+    return;
   }
   requestAnimationFrame(frame);
 }

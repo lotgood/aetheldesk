@@ -7,9 +7,27 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400&display=swap" rel="stylesheet" />
   <style>
+    :root { --focus-ring: currentColor; }
     * { font-family: 'Inter', sans-serif; }
     body { overflow: hidden; }
     ::placeholder { color: currentColor; opacity: 0.25; }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    button:focus-visible,
+    input:focus-visible {
+      outline: 2px solid var(--focus-ring);
+      outline-offset: 5px;
+      border-radius: 999px;
+    }
     #code-section {
       max-height: 0; opacity: 0; overflow: hidden; pointer-events: none;
       transition: max-height 0.4s ease, opacity 0.4s ease;
@@ -17,6 +35,14 @@
     #lobby-error {
       min-height: 1rem;
       transition: opacity 0.3s ease;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.001ms !important;
+      }
     }
   </style>
 </head>
@@ -56,7 +82,9 @@
     <h1 class="text-xs tracking-[0.5em] uppercase font-light" style="opacity:0.35">AethelDesk</h1>
 
     <div class="flex flex-col items-center gap-3">
+      <label for="pin-input" class="sr-only">방 PIN</label>
       <input id="pin-input" type="password" inputmode="numeric" autocomplete="off" placeholder="방 PIN"
+        aria-describedby="lobby-error"
         class="bg-transparent text-center text-sm font-light tracking-[0.3em] outline-none w-32 pb-2"
         style="border-bottom: 1px solid currentColor; opacity: 0.75;" />
       <button id="btn-start"
@@ -66,20 +94,26 @@
       </button>
     </div>
 
-    <p id="lobby-error" class="text-xs font-light tracking-widest" style="opacity:0.55"></p>
+    <p id="lobby-error" class="text-xs font-light tracking-widest" role="status" aria-live="polite" aria-atomic="true" style="opacity:0.55"></p>
 
     <button id="code-toggle"
+      type="button"
+      aria-expanded="false"
+      aria-controls="code-section"
       class="text-xs font-light tracking-widest hover:opacity-60 transition-opacity duration-300"
       style="opacity:0.25">
       방 코드로 입장 →
     </button>
 
-    <div id="code-section">
+    <div id="code-section" aria-hidden="true">
       <div class="flex flex-col items-center gap-3 pt-3">
+        <label for="room-input" class="sr-only">방 코드</label>
         <input id="room-input" type="text" maxlength="8" placeholder="방 코드"
+          aria-describedby="lobby-error" tabindex="-1"
           class="bg-transparent text-center text-xl font-extralight tracking-[0.3em] uppercase outline-none w-40 pb-2"
           style="border-bottom: 1px solid currentColor; opacity: 0.9;" />
         <button id="btn-join"
+          type="button" tabindex="-1"
           class="text-xs tracking-[0.3em] uppercase font-light hover:opacity-100 transition-opacity duration-300"
           style="opacity:0.4">
           입장
