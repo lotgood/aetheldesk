@@ -1,8 +1,9 @@
-(function () {
 // ─── Scene system ─────────────────────────────────────────────────────────────
-const SCENES = ['sky', 'city', 'beach', 'forest'];
+import { readScene, storeScene } from './src/storage.js';
+
+export const SCENES = ['sky', 'city', 'beach', 'forest'];
 const SCENE_LABELS = { sky: '하늘', city: '도시', beach: '해변', forest: '숲' };
-let activeScene = localStorage.getItem('scene') || 'sky';
+let activeScene = readScene('sky');
 let lastCelestial = null;
 const sceneRAFs = {};
 
@@ -45,16 +46,18 @@ function switchScene(name) {
     if (el) { el.style.opacity = '0'; el._started = false; }
   });
   activeScene = name;
-  localStorage.setItem('scene', name);
+  storeScene(name);
   document.body.dataset.scene = name === 'sky' ? '' : name;
   const btn = document.getElementById('btn-scene');
   if (btn) btn.textContent = `◈ ${SCENE_LABELS[name]}`;
   if (name !== 'sky' && lastCelestial) renderScene(lastCelestial);
 }
 
-document.getElementById('btn-scene')?.addEventListener('click', () => {
-  switchScene(SCENES[(SCENES.indexOf(activeScene) + 1) % SCENES.length]);
-});
+function bindSceneButton() {
+  document.getElementById('btn-scene')?.addEventListener('click', () => {
+    switchScene(SCENES[(SCENES.indexOf(activeScene) + 1) % SCENES.length]);
+  });
+}
 
 // ─── City scene ───────────────────────────────────────────────────────────────
 let cityBldgs = null, cityIsNight = true, cityToggleTimer = null;
@@ -402,19 +405,20 @@ function forestLoop(canvas, ts) {
   sceneRAFs.forest = requestAnimationFrame(ts2 => forestLoop(canvas, ts2));
 }
 
+function resetForResize() {
+  if (activeScene === 'sky') return;
+  stopAllScenes();
+  cityBldgs = null; forestTrees = null; forestFireflies = null;
+  const el = document.getElementById(activeScene + '-canvas');
+  if (el) el._started = false;
+}
 
-  window.AethelScenes = {
+export function createSceneController() {
+  bindSceneButton();
+  return {
     render: renderScene,
     resetForResize,
     switchScene,
     getActiveScene: () => activeScene,
   };
-
-  function resetForResize() {
-    if (activeScene === 'sky') return;
-    stopAllScenes();
-    cityBldgs = null; forestTrees = null; forestFireflies = null;
-    const el = document.getElementById(activeScene + '-canvas');
-    if (el) el._started = false;
-  }
-})();
+}
