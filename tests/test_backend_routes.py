@@ -111,6 +111,7 @@ def api_client(monkeypatch: pytest.MonkeyPatch) -> Generator[tuple[TestClient, F
     monkeypatch.setattr(backend_main, "rooms", {})
     monkeypatch.setattr(backend_main, "local_pin_hashes", {})
     monkeypatch.setattr(backend_main, "local_token_hashes", {})
+    monkeypatch.setattr(backend_main, "local_room_instance_ids", {})
     monkeypatch.setattr(backend_main, "event_subscription_tasks", {})
     with TestClient(backend_main.app) as client:
         yield client, redis
