@@ -27,6 +27,7 @@ except ModuleNotFoundError:
 
 PIN_MIN_LENGTH = 4
 PIN_MAX_LENGTH = 64
+ROOM_INSTANCE_ID_KEY = "room_instance_id"
 
 
 def _runtime() -> Any:
@@ -44,6 +45,21 @@ def os_urandom_hex(size: int) -> str:
     import os
 
     return os.urandom(size).hex().upper()
+
+
+def _new_room_instance_id() -> str:
+    return auth.create_token()
+
+
+def _metadata_room_instance_id(metadata: dict[str, object] | None) -> str | None:
+    if metadata is None:
+        return None
+    room_instance_id = metadata.get(ROOM_INSTANCE_ID_KEY)
+    return room_instance_id if isinstance(room_instance_id, str) and room_instance_id else None
+
+
+def _scoped_token_hash(token: str, room_instance_id: str) -> str:
+    return auth.hash_token(f"{room_instance_id}:{token}")
 
 
 def _require_valid_room_id(room_id: str) -> str:
@@ -96,10 +112,20 @@ async def _issue_room_token(room_id: str) -> str:
     runtime = _runtime()
     normalized = normalize_room_id(room_id)
     token = auth.create_token()
-    token_hash = auth.hash_token(token)
     if runtime.room_store is not None:
+        metadata = await runtime.room_store.get_metadata(normalized)
+        room_instance_id = _metadata_room_instance_id(metadata)
+        if room_instance_id is None or not await runtime.room_store.has_room(normalized):
+            await _auth_failure()
+        else:
+            token_hash = _scoped_token_hash(token, room_instance_id)
         await runtime.room_store.set_token_lookup(normalized, token_hash)
     else:
+        room_instance_id = runtime.local_room_instance_ids.get(normalized)
+        if room_instance_id is None:
+            await _auth_failure()
+        else:
+            token_hash = _scoped_token_hash(token, room_instance_id)
         runtime.local_token_hashes.setdefault(normalized, set()).add(token_hash)
     return token
 
@@ -107,10 +133,18 @@ async def _issue_room_token(room_id: str) -> str:
 async def _token_authorizes_room(room_id: str, token: str) -> bool:
     runtime = _runtime()
     normalized = normalize_room_id(room_id)
-    token_hash = auth.hash_token(token)
     if runtime.room_store is not None:
+        metadata = await runtime.room_store.get_metadata(normalized)
+        room_instance_id = _metadata_room_instance_id(metadata)
+        if room_instance_id is None:
+            return False
+        token_hash = _scoped_token_hash(token, room_instance_id)
         resolved_room = await runtime.room_store.get_token_room_id(normalized, token_hash)
         return resolved_room == normalized
+    room_instance_id = runtime.local_room_instance_ids.get(normalized)
+    if room_instance_id is None:
+        return False
+    token_hash = _scoped_token_hash(token, room_instance_id)
     return token_hash in runtime.local_token_hashes.get(normalized, set())
 
 
@@ -148,6 +182,9 @@ async def schedule_cleanup(room_id: str):
     room = runtime.rooms.get(normalized)
     if room and not room["clients"] and room["cleanup"] is asyncio.current_task():
         _ = runtime.rooms.pop(normalized, None)
+        _ = runtime.local_pin_hashes.pop(normalized, None)
+        _ = runtime.local_token_hashes.pop(normalized, None)
+        _ = runtime.local_room_instance_ids.pop(normalized, None)
 
 
 async def broadcast(room: Any, payload: dict[str, object]):

@@ -5,10 +5,10 @@ from typing import Any, cast
 
 try:
     from backend import auth
-    from backend.room_store import RedisUnavailable, RoomLimitReached
+    from backend.room_store import RedisUnavailable, RoomAlreadyExists, RoomLimitReached
 except ModuleNotFoundError:
     import auth
-    from room_store import RedisUnavailable, RoomLimitReached
+    from room_store import RedisUnavailable, RoomAlreadyExists, RoomLimitReached
 
 
 def _backend_module(name: str) -> Any:
@@ -21,11 +21,13 @@ def _backend_module(name: str) -> Any:
 _room_service = _backend_module("room_service")
 PIN_MAX_LENGTH = cast(int, _room_service.PIN_MAX_LENGTH)
 PIN_MIN_LENGTH = cast(int, _room_service.PIN_MIN_LENGTH)
+ROOM_INSTANCE_ID_KEY = cast(str, _room_service.ROOM_INSTANCE_ID_KEY)
 _assert_not_rate_limited = cast(Any, _room_service._assert_not_rate_limited)
 _auth_failure = cast(Any, _room_service._auth_failure)
 _client_fingerprint = cast(Any, _room_service._client_fingerprint)
 _generated_room_id = cast(Any, _room_service._generated_room_id)
 _issue_room_token = cast(Any, _room_service._issue_room_token)
+_new_room_instance_id = cast(Any, _room_service._new_room_instance_id)
 _record_failed_attempt = cast(Any, _room_service._record_failed_attempt)
 _require_valid_room_id = cast(Any, _room_service._require_valid_room_id)
 _runtime = cast(Any, _room_service._runtime)
@@ -38,6 +40,14 @@ router = APIRouter()
 
 def _redis_unavailable(exc: RedisUnavailable) -> HTTPException:
     return HTTPException(status_code=503, detail="redis unavailable")
+
+
+async def _verify_existing_pin(room_id: str, pin: str, fingerprint: str, metadata: dict[str, object] | None) -> None:
+    await _assert_not_rate_limited(room_id, fingerprint)
+    stored_pin_hash = "" if metadata is None else str(metadata.get("pin_hash", ""))
+    if not stored_pin_hash or not auth.verify_pin(pin, stored_pin_hash):
+        await _record_failed_attempt(room_id, fingerprint)
+        await _auth_failure()
 
 
 class CreateRoomRequest(BaseModel):
@@ -73,29 +83,40 @@ async def create_room(request_body: CreateRoomRequest, request: Request):
         try:
             metadata = await runtime.room_store.get_metadata(requested_id)
             if metadata is None or "pin_hash" not in metadata:
-                pin_hash = auth.hash_pin(request_body.pin)
-                await runtime.room_store.create_room(
-                    requested_id,
-                    make_state(),
-                    metadata={"room_id": requested_id, "pin_hash": pin_hash},
-                )
-            else:
-                await _assert_not_rate_limited(requested_id, fingerprint)
-                stored_pin_hash = str(metadata.get("pin_hash", ""))
-                if not stored_pin_hash or not auth.verify_pin(request_body.pin, stored_pin_hash):
-                    await _record_failed_attempt(requested_id, fingerprint)
+                if await runtime.room_store.has_room(requested_id):
                     await _auth_failure()
+                pin_hash = auth.hash_pin(request_body.pin)
+                try:
+                    await runtime.room_store.create_room(
+                        requested_id,
+                        make_state(),
+                        metadata={
+                            "room_id": requested_id,
+                            "pin_hash": pin_hash,
+                            ROOM_INSTANCE_ID_KEY: _new_room_instance_id(),
+                        },
+                    )
+                except RoomAlreadyExists:
+                    metadata = await runtime.room_store.get_metadata(requested_id)
+                    await _verify_existing_pin(requested_id, request_body.pin, fingerprint, metadata)
+            else:
+                await _verify_existing_pin(requested_id, request_body.pin, fingerprint, metadata)
         except RoomLimitReached:
             raise HTTPException(status_code=403, detail="room limit reached") from None
         except RedisUnavailable as exc:
             raise _redis_unavailable(exc) from exc
     else:
+        room_existed = requested_id in runtime.rooms
         room = get_room(requested_id)
         if room is None:
             raise HTTPException(status_code=403, detail="room limit reached")
         stored_pin_hash = runtime.local_pin_hashes.get(requested_id)
         if stored_pin_hash is None:
-            runtime.local_pin_hashes[requested_id] = auth.hash_pin(request_body.pin)
+            if room_existed:
+                await _auth_failure()
+            else:
+                runtime.local_pin_hashes[requested_id] = auth.hash_pin(request_body.pin)
+                runtime.local_room_instance_ids[requested_id] = _new_room_instance_id()
         elif not auth.verify_pin(request_body.pin, stored_pin_hash):
             await _auth_failure()
 

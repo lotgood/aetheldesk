@@ -1,3 +1,4 @@
+import asyncio
 import importlib
 import json
 import builtins
@@ -8,6 +9,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from backend import auth
+from backend.redis_contract import room_metadata_key, room_state_key
 
 room_store_module = importlib.import_module("backend.room_store")
 RoomStore = getattr(room_store_module, "RoomStore")
@@ -22,7 +24,9 @@ class FakeRedis:
     async def get(self, name: str) -> str | None:
         return self.values.get(name)
 
-    async def set(self, name: str, value: str, ex: int | None = None) -> bool:
+    async def set(self, name: str, value: str, ex: int | None = None, nx: bool = False) -> bool:
+        if nx and name in self.values:
+            return False
         self.values[name] = value
         if ex is not None:
             self.ttls[name] = ex
@@ -79,6 +83,9 @@ def room_store_fixture(monkeypatch: pytest.MonkeyPatch) -> tuple[Any, FakeRedis]
     store = RoomStore(redis)
     monkeypatch.setattr(backend_main, "room_store", store)
     monkeypatch.setattr(backend_main, "rooms", {})
+    monkeypatch.setattr(backend_main, "local_pin_hashes", {})
+    monkeypatch.setattr(backend_main, "local_token_hashes", {})
+    monkeypatch.setattr(backend_main, "local_room_instance_ids", {})
     return backend_main, redis
 
 
@@ -132,6 +139,46 @@ def test_wrong_room_and_wrong_pin_return_same_failure_shape(room_store_fixture: 
         assert wrong_pin.json() == wrong_room.json() == {"detail": "authentication failed"}
 
 
+def test_create_room_does_not_overwrite_state_when_metadata_is_missing(
+    room_store_fixture: tuple[Any, FakeRedis],
+):
+    backend_main, redis = room_store_fixture
+
+    with TestClient(backend_main.app) as client:
+        created = client.post("/api/rooms", json={"room_id": "SKEW", "pin": "2468"})
+        assert created.status_code == 200
+        state_key = room_state_key("SKEW")
+        original_state = redis.values[state_key]
+        redis.values.pop(room_metadata_key("SKEW"))
+
+        recreated = client.post("/api/rooms", json={"room_id": "SKEW", "pin": "9999"})
+
+    assert recreated.status_code == 401
+    assert recreated.json() == {"detail": "authentication failed"}
+    assert redis.values[state_key] == original_state
+
+
+def test_create_and_join_fail_closed_when_state_is_missing_but_metadata_exists(
+    room_store_fixture: tuple[Any, FakeRedis],
+):
+    backend_main, redis = room_store_fixture
+
+    with TestClient(backend_main.app) as client:
+        created = client.post("/api/rooms", json={"room_id": "METASK", "pin": "2468"})
+        assert created.status_code == 200
+        redis.values.pop(room_state_key("METASK"))
+
+        recreated = client.post("/api/rooms", json={"room_id": "METASK", "pin": "2468"})
+        joined = client.post("/api/rooms/METASK/join", json={"pin": "2468"})
+
+    assert recreated.status_code == 401
+    assert recreated.json() == {"detail": "authentication failed"}
+    assert "token" not in recreated.json()
+    assert joined.status_code == 401
+    assert joined.json() == {"detail": "authentication failed"}
+    assert "token" not in joined.json()
+
+
 def test_rate_limit_blocks_after_five_failed_attempts(room_store_fixture: tuple[Any, FakeRedis]):
     backend_main, redis = room_store_fixture
 
@@ -180,3 +227,29 @@ def test_websocket_requires_valid_token(room_store_fixture: tuple[Any, FakeRedis
                 websocket.receive_text()
         assert invalid.value.code == backend_main.WS_AUTH_CLOSE_CODE
         assert invalid.value.code == 1008
+
+
+def test_recreated_redis_room_rejects_token_from_previous_instance(room_store_fixture: tuple[Any, FakeRedis]):
+    backend_main, _redis = room_store_fixture
+
+    with TestClient(backend_main.app) as client:
+        created = client.post("/api/rooms", json={"room_id": "REUSE", "pin": "2468"})
+        assert created.status_code == 200
+        stale_token = created.json()["token"]
+
+        expired = asyncio.run(backend_main.room_store.expire_empty_room("REUSE", has_connections=False))
+        assert expired is True
+
+        recreated = client.post("/api/rooms", json={"room_id": "REUSE", "pin": "9999"})
+        assert recreated.status_code == 200
+        current_token = recreated.json()["token"]
+
+        with pytest.raises(WebSocketDisconnect) as stale_close:
+            with client.websocket_connect(f"/ws/REUSE?token={stale_token}") as websocket:
+                websocket.receive_text()
+        assert stale_close.value.code == backend_main.WS_AUTH_CLOSE_CODE
+        assert stale_close.value.reason == backend_main.WS_AUTH_CLOSE_REASON
+
+        with client.websocket_connect(f"/ws/REUSE?token={current_token}") as websocket:
+            payload = websocket.receive_json()
+        assert payload["type"] == "state"

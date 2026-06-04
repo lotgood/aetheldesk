@@ -88,6 +88,7 @@ event_bus: object | None = None
 event_subscription_tasks: dict[str, asyncio.Task[None]] = {}
 local_pin_hashes: dict[str, str] = {}
 local_token_hashes: dict[str, set[str]] = {}
+local_room_instance_ids: dict[str, str] = {}
 worker_id = config.get_worker_identity()
 
 
