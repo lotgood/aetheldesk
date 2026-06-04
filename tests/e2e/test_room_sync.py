@@ -71,6 +71,7 @@ def test_two_client_sync_reload_reconnect_and_scene(browser: Browser, live_serve
     page_a.locator('#dur-chips button[data-min="25"]').click()
     page_a.locator("#focus-btn").click()
     page_b.wait_for_function("() => document.getElementById('pomodoro').style.opacity === '1'")
+    expect(page_b).to_have_title(re.compile(r"2[45]:[0-5][0-9].*집중.*AethelDesk"))
     page_b.screenshot(path=str(EVIDENCE_DIR / "task-12-two-client-focus.png"), full_page=True)
 
     expect(page_b.locator("#pom-time")).to_have_text(re.compile(r"2[45]:[0-5][0-9]"))
@@ -78,6 +79,10 @@ def test_two_client_sync_reload_reconnect_and_scene(browser: Browser, live_serve
     _reveal_controls(page_a)
     _reveal_controls(page_b)
     page_b.wait_for_function("() => parseFloat(getComputedStyle(document.getElementById('conn-dot')).opacity) > 0")
+    page_b.locator("#btn-pause-timer").click()
+    expect(page_b).to_have_title(re.compile(r"2[45]:[0-5][0-9].*일시정지.*AethelDesk"))
+    page_b.locator("#btn-pause-timer").click()
+    expect(page_b).to_have_title(re.compile(r"2[45]:[0-5][0-9].*집중.*AethelDesk"))
     page_a.locator("#btn-play").click(force=True)
     page_b.wait_for_function("() => parseFloat(getComputedStyle(document.getElementById('conn-dot')).opacity) > 0")
     page_a.locator("#btn-pause").click(force=True)
@@ -94,11 +99,15 @@ def test_two_client_sync_reload_reconnect_and_scene(browser: Browser, live_serve
     expect(page_b.locator("#room-auth")).to_be_hidden()
     expect(page_b.locator("#room-label")).to_contain_text(room_id)
     page_b.wait_for_function("() => document.getElementById('pomodoro').style.opacity === '1'")
+    expect(page_b).to_have_title(re.compile(r"2[45]:[0-5][0-9].*집중.*AethelDesk"))
     page_b.screenshot(path=str(EVIDENCE_DIR / "task-12-reload-state.png"), full_page=True)
 
     page_a.reload(wait_until="domcontentloaded")
     expect(page_a.locator("#room-auth")).to_be_hidden()
     page_a.wait_for_function("() => document.getElementById('pomodoro').style.opacity === '1'")
+    _reveal_controls(page_a)
+    page_a.locator("#btn-cancel-timer").click()
+    expect(page_a).to_have_title("AethelDesk")
 
     _reveal_controls(page_a)
     page_a.locator("#btn-scene").click(force=True)
@@ -112,7 +121,7 @@ def test_two_client_sync_reload_reconnect_and_scene(browser: Browser, live_serve
         "\n".join(
             [
                 f"room_id={room_id}",
-                "verified=focus_toggle_via_#focus-btn,duration,music_play_pause_skip,time_override_reset,reload_state,reconnect_recovery,scene_storage",
+                "verified=focus_toggle_via_#focus-btn,duration,tab_title_focus_pause_reload_idle,music_play_pause_skip,time_override_reset,reload_state,reconnect_recovery,scene_storage",
                 "screenshots=task-12-two-client-focus.png,task-12-reload-state.png",
             ]
         ),

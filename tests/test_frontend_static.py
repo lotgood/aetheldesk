@@ -145,6 +145,25 @@ def test_room_modules_have_intentional_boundaries():
     assert "renderFocus" in ROOM_RENDERER_JS.read_text()
 
 
+def test_room_timer_updates_browser_title_from_renderer():
+    room_source = ROOM_HTML.read_text()
+    renderer_source = ROOM_RENDERER_JS.read_text()
+    combined_source = "\n".join(_frontend_sources().values())
+
+    assert "<title>AethelDesk</title>" in room_source
+    assert "function updateTimerTitle(" in renderer_source
+    assert "document.title" in renderer_source
+    assert "fmtTime(remaining)" in renderer_source
+    assert "fmtTime(breakRemaining)" in renderer_source
+    assert "집중" in renderer_source
+    assert "일시정지" in renderer_source
+    assert "휴식" in renderer_source
+    assert 'document.title = "AethelDesk";' in renderer_source
+    assert combined_source.count("document.title") == renderer_source.count("document.title")
+    assert "localStorage" not in renderer_source
+    assert "sessionStorage" not in renderer_source
+
+
 def test_lobby_behavior_is_module_owned_not_inline_script():
     lobby_html = LOBBY_HTML.read_text()
     lobby_source = LOBBY_JS.read_text()

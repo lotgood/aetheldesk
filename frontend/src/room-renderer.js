@@ -3,6 +3,16 @@ import { fmtTime } from "./timer-controls.js";
 
 const SAT_RADIUS = 58;
 
+function updateTimerTitle(focus, remaining, isBreak, breakRemaining, paused) {
+  if (focus) {
+    document.title = `${fmtTime(remaining)} ${paused ? "일시정지" : "집중"} - AethelDesk`;
+  } else if (isBreak) {
+    document.title = `${fmtTime(breakRemaining)} 휴식 - AethelDesk`;
+  } else {
+    document.title = "AethelDesk";
+  }
+}
+
 export function createRoomRenderer({ sceneController }) {
   let celestialPos = null;
   let cloudState = null;
@@ -128,6 +138,7 @@ export function createRoomRenderer({ sceneController }) {
     const skipBreakBtn = byId("btn-skip-break");
     const timerStatus = byId("timer-status");
     const activeEl = document.activeElement;
+    updateTimerTitle(focus, remaining, isBreak, breakRemaining, paused);
 
     if (focus) {
       const shouldMoveFocus = activeEl === btn || activeEl === document.body || activeEl === document.documentElement || durChips.contains(activeEl);
