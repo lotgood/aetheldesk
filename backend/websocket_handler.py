@@ -58,7 +58,12 @@ async def ws_endpoint(websocket: WebSocket, room_id: str):
         await websocket.close(code=runtime.WS_AUTH_CLOSE_CODE, reason=runtime.WS_AUTH_CLOSE_REASON)
         return
 
-    await ensure_room_events(normalized)
+    try:
+        await ensure_room_events(normalized)
+    except RedisUnavailable:
+        await websocket.accept()
+        await websocket.close(code=runtime.WS_OPERATIONAL_CLOSE_CODE, reason=runtime.WS_OPERATIONAL_CLOSE_REASON)
+        return
     await websocket.accept()
     runtime.connections.connect(normalized, websocket)
     room = runtime.rooms.get(normalized)

@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from backend import main as backend_main
+from backend import websocket_handler
 from backend.redis_contract import room_events_channel, room_state_key
 from backend import room_service
 from backend.room_store import RedisUnavailable, RoomStore
@@ -113,6 +114,7 @@ def websocket_client(monkeypatch: pytest.MonkeyPatch) -> Generator[tuple[TestCli
     monkeypatch.setattr(backend_main, "rooms", {})
     monkeypatch.setattr(backend_main, "local_pin_hashes", {})
     monkeypatch.setattr(backend_main, "local_token_hashes", {})
+    monkeypatch.setattr(backend_main, "local_room_instance_ids", {})
     monkeypatch.setattr(backend_main, "event_subscription_tasks", {})
     with TestClient(backend_main.app) as client:
         yield client, redis
@@ -222,6 +224,26 @@ def test_mid_session_redis_outage_closes_and_reconnect_recovers(websocket_client
 
     assert recovered["type"] == "state"
     assert recovered["data"]["music"]["playing"] is True
+
+
+def test_ensure_room_events_redis_unavailable_closes_1011(
+    websocket_client: tuple[TestClient, FakeRedis],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    client, _redis = websocket_client
+    token = create_room(client, "EVENTDOWN")
+
+    async def unavailable(_room_id: str) -> None:
+        raise RedisUnavailable("Redis is unavailable")
+
+    monkeypatch.setattr(websocket_handler, "ensure_room_events", unavailable)
+
+    with pytest.raises(WebSocketDisconnect) as closed:
+        with client.websocket_connect(f"/ws/EVENTDOWN?token={token}") as websocket:
+            websocket.receive_text()
+
+    assert closed.value.code == backend_main.WS_OPERATIONAL_CLOSE_CODE
+    assert closed.value.reason == backend_main.WS_OPERATIONAL_CLOSE_REASON
 
 
 def test_startup_redis_outage_fails_closed_in_required_runtime(monkeypatch: pytest.MonkeyPatch):
