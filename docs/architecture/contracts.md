@@ -51,7 +51,7 @@ These decisions guide later waves without changing the Wave 1 runtime contracts 
 ## WebSocket Contract
 
 - Endpoint: `/ws/{room_id}`.
-- Query parameter: `token` is required. The backend hashes issued opaque tokens and checks that the token lookup resolves to the same normalized room id.
+- Query parameter: `token` is required. The backend scopes issued opaque-token hashes to the current room instance and checks that the token lookup resolves to the same normalized room id.
 - Auth close: code `1008`, reason `authentication failed`, used for missing token, invalid room id, invalid token, missing room, or missing state.
 - Operational close: code `1011`, reason `service unavailable`, used when Redis becomes unavailable during authorization or message handling.
 - First successful server message: `{"type":"state","data": BackendState}`. This initial `{"type":"state"}` snapshot is the canonical current room state.
@@ -68,7 +68,7 @@ Redis keys and channels are defined in `backend/redis_contract.py` and all room 
 |---|---|---|---|---|
 | State | `aetheldesk:room:{ROOM_ID}:state` | `room_state_key(room_id)` | Stores JSON-encoded `BackendState`; this is the canonical Redis room-state value. | `tests/test_redis_contract.py`; `tests/test_room_store.py`; `tests/test_websocket_redis.py`. |
 | Metadata | `aetheldesk:room:{ROOM_ID}:meta` | `room_metadata_key(room_id)` | Stores JSON metadata, including `room_id` and, for PIN-protected rooms, `pin_hash`. | `tests/test_redis_contract.py`; `tests/test_room_auth.py`; `tests/test_room_store.py`. |
-| Token lookup | `aetheldesk:room:{ROOM_ID}:token:{TOKEN_HASH}` | `room_token_key(room_id, token_hash)` | Maps an opaque token hash to the normalized room id; plaintext tokens are not stored. | `tests/test_redis_contract.py`; `tests/test_room_store.py`; `tests/test_room_auth.py`. |
+| Token lookup | `aetheldesk:room:{ROOM_ID}:token:{TOKEN_HASH}` | `room_token_key(room_id, token_hash)` | Maps a room-instance-scoped opaque token hash to the normalized room id; plaintext tokens are not stored, and same-id recreated rooms reject tokens from previous instances. | `tests/test_redis_contract.py`; `tests/test_room_store.py`; `tests/test_room_auth.py`. |
 | PIN attempts | `aetheldesk:room:{ROOM_ID}:pin-attempts:{FINGERPRINT}` | `room_pin_attempts_key(room_id, fingerprint)` | Counts failed PIN attempts within the configured attempt window. | `tests/test_redis_contract.py`; `tests/test_room_auth.py`. |
 | PIN block | `aetheldesk:room:{ROOM_ID}:pin-block:{FINGERPRINT}` | `room_pin_block_key(room_id, fingerprint)` | Marks a fingerprint as temporarily blocked after too many failures. | `tests/test_redis_contract.py`; `tests/test_room_auth.py`. |
 | Tick lock | `aetheldesk:room:{ROOM_ID}:tick-lock` | `room_tick_lock_key(room_id)` | Acquired with `NX` and a TTL before scheduler workers mutate timer/celestial state. | `tests/test_redis_contract.py`; `tests/test_room_store.py`; scheduler tests. |
