@@ -46,6 +46,10 @@ class RoomLimitReached(RuntimeError):
     pass
 
 
+class RoomAlreadyExists(RuntimeError):
+    pass
+
+
 class RedisLike(Protocol):
     def get(self, name: str) -> object: ...
     def set(self, name: str, value: str, ex: int | None = None, nx: bool = False) -> object: ...
@@ -119,22 +123,36 @@ class RoomStore:
         metadata: dict[str, object] | None = None,
     ) -> BackendState:
         normalized = normalize_room_id(room_id)
-        if not await self.has_room(normalized) and await self.room_count() >= self.max_rooms:
+        if await self.get_state(normalized) is not None or await self.get_metadata(normalized) is not None:
+            raise RoomAlreadyExists("room already exists")
+        if await self.room_count() >= self.max_rooms:
             raise RoomLimitReached(f"room limit reached ({self.max_rooms})")
 
-        await self.set_state(normalized, state)
-        await self.set_metadata(normalized, metadata or self._default_metadata(normalized))
-        await _redis_call(lambda: self.redis.sadd(ROOM_INDEX_KEY, normalized))
-        await self.refresh_ttl(normalized)
-        return await self.get_state(normalized) or state
+        created = await self._set_state(normalized, state, nx=True)
+        if not created:
+            raise RoomAlreadyExists("room already exists")
 
-    async def get_or_create_room(self, room_id: str, state_factory: Callable[[], BackendState]) -> BackendState:
+        try:
+            await self.set_metadata(normalized, metadata or self._default_metadata(normalized))
+            await _redis_call(lambda: self.redis.sadd(ROOM_INDEX_KEY, normalized))
+            await self.refresh_ttl(normalized)
+        except Exception:
+            await _redis_call(lambda: self.redis.delete(room_state_key(normalized), room_metadata_key(normalized)))
+            raise
+        return state
+
+    async def get_or_create_room(self, room_id: str, state_factory: Callable[[], BackendState]) -> BackendState | None:
         normalized = normalize_room_id(room_id)
         state = await self.get_state(normalized)
         if state is not None:
             await self.refresh_ttl(normalized)
             return state
-        return await self.create_room(normalized, state_factory())
+        if await self.get_metadata(normalized) is not None:
+            return None
+        try:
+            return await self.create_room(normalized, state_factory())
+        except RoomAlreadyExists:
+            return await self.get_state(normalized)
 
     async def get_state(self, room_id: str) -> BackendState | None:
         encoded = _decode_text(await _redis_call(lambda: self.redis.get(room_state_key(room_id))))
@@ -143,8 +161,12 @@ class RoomStore:
         return cast(BackendState, json.loads(encoded))
 
     async def set_state(self, room_id: str, state: BackendState) -> None:
+        _ = await self._set_state(room_id, state)
+
+    async def _set_state(self, room_id: str, state: BackendState, *, nx: bool = False) -> bool:
         encoded = _json_dumps(state)
-        await _redis_call(lambda: self.redis.set(room_state_key(room_id), encoded, ex=self.ttl_seconds))
+        result = await _redis_call(lambda: self.redis.set(room_state_key(room_id), encoded, ex=self.ttl_seconds, nx=nx))
+        return bool(result)
 
     async def update_state(self, room_id: str, updater: Callable[[BackendState], None]) -> BackendState | None:
         state = await self.get_state(room_id)

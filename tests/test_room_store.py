@@ -144,6 +144,65 @@ def test_max_room_enforcement_counts_room_index():
     asyncio.run(run())
 
 
+def test_create_room_refuses_state_only_skew_without_overwrite():
+    redis = FakeRedis()
+    store = RoomStore(redis)
+    original = sample_state()
+    replacement = sample_state()
+    replacement["pomodoro_remaining"] = 99
+
+    async def run() -> None:
+        await store.create_room("skew", original, metadata={"room_id": "SKEW", "pin_hash": "old"})
+        redis.values.pop(redis_contract.room_metadata_key("SKEW"))
+
+        with pytest.raises(RuntimeError, match="room already exists"):
+            await store.create_room("skew", replacement, metadata={"room_id": "SKEW", "pin_hash": "new"})
+
+        assert await store.get_state("SKEW") == original
+        assert await store.get_metadata("SKEW") is None
+
+    asyncio.run(run())
+
+
+def test_get_or_create_room_does_not_overwrite_metadata_only_skew():
+    redis = FakeRedis()
+    store = RoomStore(redis)
+    metadata = {"room_id": "SKEW", "pin_hash": "old"}
+    redis.values[redis_contract.room_metadata_key("SKEW")] = json.dumps(metadata, separators=(",", ":"))
+
+    async def run() -> None:
+        created = await store.get_or_create_room("skew", sample_state)
+
+        assert created is None
+        assert await store.get_state("SKEW") is None
+        assert await store.get_metadata("SKEW") == metadata
+
+    asyncio.run(run())
+
+
+def test_concurrent_create_same_room_allows_single_writer():
+    redis = FakeRedis()
+    store = RoomStore(redis)
+
+    async def create(marker: str) -> BackendState:
+        state = sample_state()
+        state["celestial"] = {"marker": marker}
+        return await store.create_room("race", state, metadata={"room_id": "RACE", "marker": marker})
+
+    async def run() -> None:
+        results = await asyncio.gather(create("one"), create("two"), return_exceptions=True)
+
+        assert sum(not isinstance(result, Exception) for result in results) == 1
+        assert sum(isinstance(result, RuntimeError) for result in results) == 1
+        stored_state = await store.get_state("RACE")
+        stored_metadata = await store.get_metadata("RACE")
+        assert stored_state is not None
+        assert stored_metadata is not None
+        assert stored_state["celestial"]["marker"] == stored_metadata["marker"]
+
+    asyncio.run(run())
+
+
 def test_empty_room_expiry_cleans_state_metadata_and_index():
     redis = FakeRedis()
     store = RoomStore(redis)
