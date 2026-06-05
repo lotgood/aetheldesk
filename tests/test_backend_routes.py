@@ -228,11 +228,16 @@ def test_api_routes_are_not_shadowed_by_root_static_mount(api_client: tuple[Test
     assert response.json()["room_id"] == "STATIC"
 
 
-def test_vite_asset_mount_uses_immutable_cache_headers(tmp_path: Path):
-    assets_dir = tmp_path / "assets"
-    assets_dir.mkdir()
-    asset = assets_dir / "app-abc123.js"
+def test_vite_asset_mount_uses_temporary_dist_assets_without_touching_real_dist(tmp_path: Path):
+    real_dist = Path(backend_main.FRONTEND_DIST).resolve()
+    generated_asset = real_dist / "assets" / "task-1-fixture.js"
+    frontend_dir = tmp_path / "frontend"
+    assets_dir = frontend_dir / "dist" / "assets"
+    assets_dir.mkdir(parents=True)
+    asset = assets_dir / "task-1-fixture.js"
     asset.write_text("export {};", encoding="utf-8")
+    assert not asset.resolve().is_relative_to(real_dist)
+
     static_app = backend_main.CacheControlledStaticFiles(
         directory=str(assets_dir),
         cache_control="public, max-age=31536000, immutable",
@@ -244,10 +249,11 @@ def test_vite_asset_mount_uses_immutable_cache_headers(tmp_path: Path):
     app.mount("/assets", static_app)
 
     with TestClient(app) as client:
-        response = client.get("/assets/app-abc123.js")
+        response = client.get("/assets/task-1-fixture.js")
 
     assert response.status_code == 200
     assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert not generated_asset.exists()
 
 
 def test_frontend_file_prefers_vite_dist_and_falls_back_to_source(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):

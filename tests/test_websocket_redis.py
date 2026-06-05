@@ -150,7 +150,9 @@ def test_missing_and_invalid_token_close_uniformly_without_room_leak(websocket_c
         assert closed.value.reason == backend_main.WS_AUTH_CLOSE_REASON
 
 
-def test_inbound_message_updates_redis_and_publishes_full_state_snapshot(websocket_client: tuple[TestClient, FakeRedis]):
+def test_inbound_message_updates_redis_and_publishes_full_state_snapshot(
+    websocket_client: tuple[TestClient, FakeRedis],
+):
     client, redis = websocket_client
     token = create_room(client, "SYNC")
 
@@ -169,6 +171,57 @@ def test_inbound_message_updates_redis_and_publishes_full_state_snapshot(websock
     assert envelope["type"] == "state_snapshot"
     assert set(envelope["data"]) == set(stored)
     assert envelope["data"] == stored
+
+
+def test_malformed_websocket_payload_is_ignored_before_next_valid_message(
+    websocket_client: tuple[TestClient, FakeRedis],
+):
+    client, redis = websocket_client
+    token = create_room(client, "IGNORE")
+
+    with client.websocket_connect(f"/ws/IGNORE?token={token}") as websocket:
+        initial = websocket.receive_json()
+        assert initial["data"]["focus"] is False
+
+        websocket.send_text("{not-json")
+        websocket.send_json({"type": "focus_toggle"})
+        update = websocket.receive_json()
+
+    stored = json.loads(redis.values[room_state_key("IGNORE")])
+    assert update["type"] == "state"
+    assert update["data"]["focus"] is True
+    assert stored["focus"] is True
+
+
+def test_invalid_websocket_commands_do_not_mutate_before_next_valid_message(
+    websocket_client: tuple[TestClient, FakeRedis],
+):
+    client, redis = websocket_client
+    token = create_room(client, "PARSE")
+    invalid_messages = [
+        {"type": "set_duration", "minutes": "25"},
+        {"type": "music_skip", "video_id": "short"},
+        {"type": "location", "lat": "bad", "lon": 127.7},
+        {"type": "unknown"},
+    ]
+
+    with client.websocket_connect(f"/ws/PARSE?token={token}") as websocket:
+        initial = websocket.receive_json()
+        assert initial["data"]["focus"] is False
+        for message in invalid_messages:
+            websocket.send_json(message)
+        websocket.send_json({"type": "focus_toggle"})
+        for _ in range(len(invalid_messages) + 1):
+            update = websocket.receive_json()
+            if update["data"]["focus"] is True:
+                break
+        else:
+            pytest.fail("valid message was not processed after invalid commands")
+
+    stored = json.loads(redis.values[room_state_key("PARSE")])
+    assert stored["focus"] is True
+    assert stored["pomodoro_duration"] == 3000
+    assert stored["music"]["video_id"] == "jfKfPfyJRdk"
 
 
 def test_two_clients_receive_broadcast_state_snapshot(websocket_client: tuple[TestClient, FakeRedis]):

@@ -244,6 +244,20 @@ def test_snapshot_with_extra_key_is_rejected():
     assert decoded_messages(websocket) == []
 
 
+def test_snapshot_with_invalid_music_shape_is_rejected():
+    redis = FakeRedis()
+    manager = LocalConnectionManager()
+    websocket = DummyWebSocket()
+    manager.connect("room-a", cast(WebSocket, websocket))
+    bus = RedisStateEventBus(redis, worker_id="worker-a", connections=manager)
+    state = dict(sample_state())
+    state["music"] = {"playing": True}
+    envelope = event_payload("room-a", "worker-b", "evt-bad-music", cast(BackendState, state))
+
+    assert asyncio.run(bus.dispatch_envelope(envelope)) is False
+    assert decoded_messages(websocket) == []
+
+
 def test_invalid_envelope_is_rejected_safely():
     redis = FakeRedis()
     manager = LocalConnectionManager()

@@ -1,151 +1,50 @@
 import asyncio
-import hashlib
-import hmac
 import json
 from contextlib import suppress
-from importlib import import_module
 from typing import Any
 
-from fastapi import HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import WebSocket, WebSocketDisconnect
 
 try:
-    from backend import auth, config
+    from backend import config
+    from backend import room_auth_service
+    from backend import runtime as runtime_module
     from backend import state as state_reducer
+    from backend.client_messages import parse_client_message
     from backend.event_bus import RedisStateEventBus
-    from backend.redis_contract import is_valid_room_id, normalize_room_id
+    from backend.redis_contract import normalize_room_id
     from backend.room_store import RedisUnavailable, RoomLimitReached, create_redis_store
     from backend.state import BackendState
 except ModuleNotFoundError:
-    import auth
     import config
+    import room_auth_service
+    import runtime as runtime_module
     import state as state_reducer
+    from client_messages import parse_client_message
     from event_bus import RedisStateEventBus
-    from redis_contract import is_valid_room_id, normalize_room_id
+    from redis_contract import normalize_room_id
     from room_store import RedisUnavailable, RoomLimitReached, create_redis_store
     from state import BackendState
 
 
-PIN_MIN_LENGTH = 4
-PIN_MAX_LENGTH = 64
-ROOM_INSTANCE_ID_KEY = "room_instance_id"
+PIN_MIN_LENGTH = room_auth_service.PIN_MIN_LENGTH
+PIN_MAX_LENGTH = room_auth_service.PIN_MAX_LENGTH
+ROOM_INSTANCE_ID_KEY = room_auth_service.ROOM_INSTANCE_ID_KEY
+_assert_not_rate_limited = room_auth_service.assert_not_rate_limited
+_auth_failure = room_auth_service.auth_failure
+_client_fingerprint = room_auth_service.client_fingerprint
+_generated_room_id = room_auth_service.generated_room_id
+_issue_room_token = room_auth_service.issue_room_token
+_metadata_room_instance_id = room_auth_service.metadata_room_instance_id
+_new_room_instance_id = room_auth_service.new_room_instance_id
+_record_failed_attempt = room_auth_service.record_failed_attempt
+_require_valid_room_id = room_auth_service.require_valid_room_id
+_scoped_token_hash = room_auth_service.scoped_token_hash
+_token_authorizes_room = room_auth_service.token_authorizes_room
 
 
 def _runtime() -> Any:
-    try:
-        return import_module("backend.main")
-    except ModuleNotFoundError:
-        return import_module("main")
-
-
-def _generated_room_id() -> str:
-    return "R" + os_urandom_hex(4)[:7]
-
-
-def os_urandom_hex(size: int) -> str:
-    import os
-
-    return os.urandom(size).hex().upper()
-
-
-def _new_room_instance_id() -> str:
-    return auth.create_token()
-
-
-def _metadata_room_instance_id(metadata: dict[str, object] | None) -> str | None:
-    if metadata is None:
-        return None
-    room_instance_id = metadata.get(ROOM_INSTANCE_ID_KEY)
-    return room_instance_id if isinstance(room_instance_id, str) and room_instance_id else None
-
-
-def _scoped_token_hash(token: str, room_instance_id: str) -> str:
-    return auth.hash_token(f"{room_instance_id}:{token}")
-
-
-def _require_valid_room_id(room_id: str) -> str:
-    normalized = normalize_room_id(room_id)
-    if not is_valid_room_id(normalized):
-        raise HTTPException(status_code=400, detail="invalid room id")
-    return normalized
-
-
-def _client_fingerprint(request: Request) -> str:
-    ip: str | None = None
-    if config.TRUST_PROXY:
-        forwarded = request.headers.get("x-forwarded-for", "")
-        ip = forwarded.split(",", 1)[0].strip() or None
-    if not ip:
-        ip = request.client.host if request.client is not None else "unknown"
-    key = config.get_secret_key().encode("utf-8")
-    return hmac.new(key, ip.encode("utf-8"), hashlib.sha256).hexdigest()
-
-
-async def _auth_failure() -> None:
-    raise HTTPException(status_code=401, detail=auth.failure_body()["detail"])
-
-
-async def _assert_not_rate_limited(room_id: str, fingerprint: str) -> None:
-    runtime = _runtime()
-    if runtime.room_store is None:
-        return
-    if await runtime.room_store.is_pin_blocked(room_id, fingerprint):
-        raise HTTPException(status_code=403, detail=auth.failure_body()["detail"])
-
-
-async def _record_failed_attempt(room_id: str, fingerprint: str) -> None:
-    runtime = _runtime()
-    if runtime.room_store is None:
-        return
-    policy = auth.PinRatePolicy()
-    blocked = await runtime.room_store.record_failed_pin_attempt(
-        room_id,
-        fingerprint,
-        attempt_window_seconds=policy.attempt_window_seconds,
-        max_attempts=policy.max_attempts,
-        block_seconds=policy.block_seconds,
-    )
-    if blocked:
-        raise HTTPException(status_code=403, detail=auth.failure_body()["detail"])
-
-
-async def _issue_room_token(room_id: str) -> str:
-    runtime = _runtime()
-    normalized = normalize_room_id(room_id)
-    token = auth.create_token()
-    if runtime.room_store is not None:
-        metadata = await runtime.room_store.get_metadata(normalized)
-        room_instance_id = _metadata_room_instance_id(metadata)
-        if room_instance_id is None or not await runtime.room_store.has_room(normalized):
-            await _auth_failure()
-        else:
-            token_hash = _scoped_token_hash(token, room_instance_id)
-        await runtime.room_store.set_token_lookup(normalized, token_hash)
-    else:
-        room_instance_id = runtime.local_room_instance_ids.get(normalized)
-        if room_instance_id is None:
-            await _auth_failure()
-        else:
-            token_hash = _scoped_token_hash(token, room_instance_id)
-        runtime.local_token_hashes.setdefault(normalized, set()).add(token_hash)
-    return token
-
-
-async def _token_authorizes_room(room_id: str, token: str) -> bool:
-    runtime = _runtime()
-    normalized = normalize_room_id(room_id)
-    if runtime.room_store is not None:
-        metadata = await runtime.room_store.get_metadata(normalized)
-        room_instance_id = _metadata_room_instance_id(metadata)
-        if room_instance_id is None:
-            return False
-        token_hash = _scoped_token_hash(token, room_instance_id)
-        resolved_room = await runtime.room_store.get_token_room_id(normalized, token_hash)
-        return resolved_room == normalized
-    room_instance_id = runtime.local_room_instance_ids.get(normalized)
-    if room_instance_id is None:
-        return False
-    token_hash = _scoped_token_hash(token, room_instance_id)
-    return token_hash in runtime.local_token_hashes.get(normalized, set())
+    return runtime_module.get_runtime()
 
 
 def make_state() -> BackendState:
@@ -185,6 +84,12 @@ async def schedule_cleanup(room_id: str):
         _ = runtime.local_pin_hashes.pop(normalized, None)
         _ = runtime.local_token_hashes.pop(normalized, None)
         _ = runtime.local_room_instance_ids.pop(normalized, None)
+
+
+def schedule_empty_room_cleanup(room_id: str, room: runtime_module.Room | None) -> None:
+    task = asyncio.create_task(schedule_cleanup(normalize_room_id(room_id)))
+    if room is not None:
+        room["cleanup"] = task
 
 
 async def broadcast(room: Any, payload: dict[str, object]):
@@ -269,9 +174,13 @@ async def stop_room_events(room_id: str) -> None:
         await task
 
 
-async def handle(state: BackendState, msg: dict[str, object]) -> None:
+async def handle(state: BackendState, msg: object) -> bool:
     runtime = _runtime()
-    await state_reducer.handle(state, msg, runtime.get_celestial_state)
+    command = parse_client_message(msg)
+    if command is None:
+        return False
+    await state_reducer.handle(state, command, runtime.get_celestial_state)
+    return True
 
 
 async def initialize_store_and_events() -> None:

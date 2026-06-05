@@ -1,8 +1,6 @@
 import { byId, debounce } from "./dom.js";
 
-export function fmtTime(sec) {
-  return `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`;
-}
+export { fmtTime } from "./timer-view.js";
 
 function fmtSliderMinutes(value) {
   const hours = Math.floor(value / 60);

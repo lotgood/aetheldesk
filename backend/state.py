@@ -1,7 +1,20 @@
-import re
 from datetime import datetime, timezone
 from importlib import import_module
-from typing import Protocol, TypedDict, cast
+from typing import TYPE_CHECKING, Protocol, TypedDict, cast
+
+try:
+    from backend import client_messages
+except ModuleNotFoundError:
+    import client_messages
+
+if TYPE_CHECKING:
+    from backend.client_messages import (
+        ClientCommand,
+        LocationCommand,
+        MusicSkipCommand,
+        SetDurationCommand,
+        TimeOverrideCommand,
+    )
 
 
 class GetCelestialState(Protocol):
@@ -16,8 +29,7 @@ except ModuleNotFoundError:
     _celestial_module = import_module("backend.celestial")
 
 get_celestial_state = cast(GetCelestialState, _celestial_module.get_celestial_state)
-
-YT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+YT_ID_RE = client_messages.YT_ID_RE
 
 MusicState = TypedDict(
     "MusicState",
@@ -93,13 +105,14 @@ def advance_timer_state(state: BackendState) -> bool:
 
 async def handle(
     state: BackendState,
-    msg: dict[str, object],
+    command: "ClientCommand",
     celestial_provider: GetCelestialState | None = None,
 ) -> None:
     provider = celestial_provider or get_celestial_state
-    t = msg.get("type")
+    t = command["type"]
     if t == "time_override":
-        iso = cast(str | None, msg.get("iso"))
+        time_override = cast("TimeOverrideCommand", command)
+        iso = time_override["iso"]
         dt = _parse_iso(iso) if iso else None
         state["time_override"] = iso
         state["celestial"] = provider(dt)
@@ -120,11 +133,11 @@ async def handle(
         state["break_remaining"] = 0
         state["pomodoro_remaining"] = state["pomodoro_duration"]
     elif t == "set_duration":
-        mins = msg.get("minutes")
-        if isinstance(mins, int) and 1 <= mins <= 120:
-            state["pomodoro_duration"] = mins * 60
-            if not state["focus"]:
-                state["pomodoro_remaining"] = state["pomodoro_duration"]
+        set_duration = cast("SetDurationCommand", command)
+        mins = set_duration["minutes"]
+        state["pomodoro_duration"] = mins * 60
+        if not state["focus"]:
+            state["pomodoro_remaining"] = state["pomodoro_duration"]
     elif t == "skip_break":
         state["break"] = False
         state["break_remaining"] = 0
@@ -133,14 +146,10 @@ async def handle(
     elif t == "music_pause":
         state["music"]["playing"] = False
     elif t == "music_skip":
-        vid = msg.get("video_id")
-        if isinstance(vid, str) and YT_ID_RE.match(vid):
-            state["music"]["video_id"] = vid
+        music_skip = cast("MusicSkipCommand", command)
+        state["music"]["video_id"] = music_skip["video_id"]
     elif t == "location":
-        lat, lon = msg.get("lat"), msg.get("lon")
-        if not (isinstance(lat, (int, float)) and isinstance(lon, (int, float))):
-            return
-        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
-            return
+        location = cast("LocationCommand", command)
+        lat, lon = location["lat"], location["lon"]
         dt = _parse_iso(state["time_override"]) if state["time_override"] else None
         state["celestial"] = provider(lat=lat, lon=lon, dt=dt)

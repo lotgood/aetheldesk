@@ -101,6 +101,17 @@ def test_auth_hashes_and_verifies_pin_and_token_without_plaintext_echo():
     assert auth.hash_token(token) == token_hash
 
 
+def test_pin_rate_policy_and_failure_body_stay_generic():
+    policy = auth.PinRatePolicy()
+
+    assert policy.attempt_window_seconds == auth.PIN_ATTEMPT_WINDOW_SECONDS == 300
+    assert policy.max_attempts == auth.PIN_MAX_ATTEMPTS == 5
+    assert policy.block_seconds == auth.PIN_BLOCK_SECONDS == 600
+    assert auth.failure_body() == {"detail": "authentication failed"}
+    assert "pin" not in json.dumps(auth.failure_body()).lower()
+    assert "token" not in json.dumps(auth.failure_body()).lower()
+
+
 def test_create_room_and_join_never_return_or_store_plaintext_pin(room_store_fixture: tuple[Any, FakeRedis]):
     backend_main, redis = room_store_fixture
 

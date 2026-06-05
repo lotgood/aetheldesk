@@ -26,6 +26,8 @@ export function createMusicController({ playlist, getState, send }) {
 
   function showMusicBar() {
     const bar = byId("music-bar");
+    bar.style.position = "static";
+    bar.style.bottom = "";
     bar.style.opacity = "1";
     bar.style.pointerEvents = "auto";
     bar.style.transform = "translateY(0)";

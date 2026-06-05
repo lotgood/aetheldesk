@@ -173,3 +173,13 @@ Task 10 implemented the highest priority findings from this audit while preservi
 - The YouTube iframe API may replace the static frame at runtime, so the live iframe must stay `aria-hidden`, `tabindex="-1"`, and `inert` after construction and readiness.
 - Evidence for the implementation is recorded in `.omo/evidence/task-10-a11y-keyboard.txt`, `.omo/evidence/task-10-a11y-errors.txt`, and `.omo/evidence/task-10-a11y-youtube.txt`.
 - Later UX work should not add a full i18n toggle, scene picker redesign, saved geolocation preferences, or new frontend frameworks unless separately approved.
+
+## Task 15 UX Hardening Handoff
+
+Task 15 closed the remaining mobile, touch, reduced-motion, and scene discoverability findings without changing the product model or adding a new frontend framework.
+
+- Mobile portrait layouts at `390x844` and `768x1024` now keep `#time-dial`, `#controls`, and `#center-cluster` separated, with screenshots in `.omo/evidence/task-15-mobile-portrait.png` and `.omo/evidence/task-15-mobile-tablet.png`.
+- Touch emulation keeps room controls reachable without relying on mouse movement; desktop-only auto-hide still applies only when the browser does not report touch input.
+- Reduced-motion emulation disables decorative CSS animation and leaves scene canvas output stable while room WebSocket sync continues. Evidence is recorded in `.omo/evidence/task-15-reduced-motion.txt`.
+- The scene control exposes available scenes and the current selected scene through `aria-describedby="scene-options"` and continues to announce changes through `#room-status`.
+- Evidence for the full browser pass is recorded in `.omo/evidence/task-15-mobile-touch.txt` and `.omo/evidence/task-15-e2e-full.txt`.

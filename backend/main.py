@@ -1,22 +1,19 @@
-import asyncio
-import logging
 import os
 import sys
-from datetime import datetime
 from importlib import import_module
-from typing import Any, Protocol, TypedDict, cast
+from typing import Any, cast
 
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 sys.path.insert(0, os.path.dirname(__file__))
 
 try:
-    from backend import config
+    from backend import runtime as runtime_state
     from backend.connection_manager import LocalConnectionManager
     from backend.state import BackendState, MusicState, _parse_iso, advance_timer_state
 except ModuleNotFoundError:
-    import config
+    import runtime as runtime_state
     from connection_manager import LocalConnectionManager
     from state import BackendState, MusicState, _parse_iso, advance_timer_state
 
@@ -53,43 +50,26 @@ tick = cast(Any, _scheduler_wiring_module.tick)
 websocket_router = cast(Any, _websocket_handler_module.router)
 
 
-class GetCelestialState(Protocol):
-    def __call__(
-        self, dt: datetime | None = None, lat: float | None = None, lon: float | None = None
-    ) -> dict[str, object]: ...
-
-
-get_celestial_state = cast(GetCelestialState, import_module("celestial").get_celestial_state)
-
-logger = logging.getLogger("aetheldesk")
-
-FRONTEND = os.path.abspath(os.path.join(os.path.dirname(__file__), "../frontend"))
-FRONTEND_DIST = os.path.join(FRONTEND, "dist")
-MAX_ROOMS = 50
-ROOM_TTL = config.ROOM_TTL_SECONDS
-WS_AUTH_CLOSE_CODE = 1008
-WS_AUTH_CLOSE_REASON = "authentication failed"
-WS_OPERATIONAL_CLOSE_CODE = 1011
-WS_OPERATIONAL_CLOSE_REASON = "service unavailable"
-
-Room = TypedDict(
-    "Room",
-    {
-        "state": BackendState,
-        "clients": set[WebSocket],
-        "cleanup": asyncio.Task[None] | None,
-    },
-)
-
-rooms: dict[str, Room] = {}
-connections = LocalConnectionManager()
-room_store: object | None = None
-event_bus: object | None = None
-event_subscription_tasks: dict[str, asyncio.Task[None]] = {}
-local_pin_hashes: dict[str, str] = {}
-local_token_hashes: dict[str, set[str]] = {}
-local_room_instance_ids: dict[str, str] = {}
-worker_id = config.get_worker_identity()
+Room = runtime_state.Room
+get_celestial_state = runtime_state.get_celestial_state
+logger = runtime_state.logger
+FRONTEND = runtime_state.FRONTEND
+FRONTEND_DIST = runtime_state.FRONTEND_DIST
+MAX_ROOMS = runtime_state.MAX_ROOMS
+ROOM_TTL = runtime_state.ROOM_TTL
+WS_AUTH_CLOSE_CODE = runtime_state.WS_AUTH_CLOSE_CODE
+WS_AUTH_CLOSE_REASON = runtime_state.WS_AUTH_CLOSE_REASON
+WS_OPERATIONAL_CLOSE_CODE = runtime_state.WS_OPERATIONAL_CLOSE_CODE
+WS_OPERATIONAL_CLOSE_REASON = runtime_state.WS_OPERATIONAL_CLOSE_REASON
+rooms = runtime_state.rooms
+connections = runtime_state.connections
+room_store = runtime_state.room_store
+event_bus = runtime_state.event_bus
+event_subscription_tasks = runtime_state.event_subscription_tasks
+local_pin_hashes = runtime_state.local_pin_hashes
+local_token_hashes = runtime_state.local_token_hashes
+local_room_instance_ids = runtime_state.local_room_instance_ids
+worker_id = runtime_state.worker_id
 
 
 class CacheControlledStaticFiles(StaticFiles):
@@ -102,6 +82,7 @@ class CacheControlledStaticFiles(StaticFiles):
         if response.status_code == 200:
             response.headers["Cache-Control"] = self._cache_control
         return response
+
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(frontend_router)

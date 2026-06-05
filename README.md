@@ -19,10 +19,13 @@ AethelDesk keeps room coordination server owned while the browser client stays l
 * Frontend: Vite + vanilla ES modules. `package.json` and `package-lock.json` are the authoritative frontend dependency files.
 * Backend: FastAPI serves `/`, `/room/{room_id}`, REST room APIs, WebSockets, `/health`, Vite hashed assets at `/assets/*` when `frontend/dist/assets` exists, and source frontend files as a no-cache fallback.
 * Static cache policy: route-owned HTML uses `Cache-Control: no-cache`, Vite hashed `/assets/*` uses `public, max-age=31536000, immutable`, and root static fallback uses `no-cache`.
+* Backend boundaries: runtime globals, room auth/lifecycle, client message parsing, state codec, and WebSocket session orchestration are split into focused modules under `backend/`.
+* Frontend boundaries: `frontend/app.js` only starts the room app; controller, connection, state application, renderer, timer view, scenes, music, location, and exit confirmation live in ES modules.
 * Room state: Redis stores the canonical JSON room state and metadata with keys such as `aetheldesk:room:{ROOM_ID}:state` and `aetheldesk:room:{ROOM_ID}:meta`.
 * Sync: Redis Pub/Sub publishes full-state room snapshots on `aetheldesk:room:{ROOM_ID}:events`; each worker fans updates out only to its own local WebSockets.
 * Scheduler: every worker may run the scheduler, but room timer and celestial ticks mutate state only after the worker acquires the per-room Redis tick lock.
 * Access: rooms use a PIN at create or join time. The backend stores hashes and opaque token hashes, not plaintext PINs.
+* Frontend assets: local Vite-managed CSS owns styling and font fallback stacks. Google Fonts and Tailwind CDN are not runtime dependencies; the YouTube iframe API remains allowed for focus music.
 
 Redis state is restart-tolerant ephemeral room state when Docker AOF is enabled with `appendfsync everysec`. It can recover current active room state after a restart, but it is not permanent history, audit storage, analytics storage, or replay storage.
 
@@ -53,15 +56,19 @@ Run commands from the repository root unless a row says otherwise.
 | `uv run pytest -q` | Run the default non-e2e Python suite. | Required local and CI test gate. |
 | `uv run playwright install chromium` | Install the Chromium browser for Playwright if missing. | Setup step for browser e2e. |
 | `uv run pytest tests/e2e -m e2e --browser chromium -q` | Run Playwright browser e2e. | CI e2e gate and local regression gate for user-visible flows. |
-| `npm ci` | Install locked frontend dependencies from `package-lock.json`. | Docker frontend build stage and clean frontend setup. |
+| `npm ci` | Install locked frontend dependencies from `package-lock.json`. | Docker frontend build stage, clean frontend setup, and CI frontend build job. |
 | `npm run dev` | Start the Vite dev server on `0.0.0.0`. | Local frontend dev with backend proxy. |
-| `npm run build` | Build production Vite assets into `frontend/dist`. | Required local and CI frontend gate. |
+| `npm run build` | Build production Vite assets into `frontend/dist`. | Required local gate and direct CI `frontend-build` gate. |
 | `docker compose up --build --detach` | Build and start the app plus Redis. | Docker self-host setup and CI Compose health gate where Docker exists. |
 | `docker compose ps` | Check Compose service health. | App and Redis should be healthy after startup. |
 | `curl -fsS http://127.0.0.1:${APP_PORT:-8000}/health` | Check app health. | Returns success when Redis is required and reachable. |
 | `docker compose exec redis redis-cli CONFIG GET appendonly appendfsync` | Confirm Redis AOF policy. | Reports `appendonly yes` and `appendfsync everysec`. |
 
 Docker Compose verification is currently blocked in this execution environment because `docker` is not installed. Task 11 implementation is committed, but local Compose health evidence must not be treated as passing here. The blocker is recorded in `.omo/evidence/task-11-docker-health.txt`.
+
+## Quality Gate Staging
+
+Python quality gates tighten one backend module at a time instead of flipping the whole repository to strict mode in one change. A module graduates by removing it from Ruff formatter exclusions when present, adding it to the named Pyright strict pilot list in `pyproject.toml`, and keeping `uv run ruff format --check <module>`, `uv run ruff check .`, `uv run pyright`, and its contract tests green. The current pilot module is `backend/auth.py`.
 
 ## Local Setup
 
@@ -182,13 +189,14 @@ AethelDesk is now a Vite + vanilla ES module frontend with a FastAPI backend. Re
 
 Redis remains mandatory for Docker/prod and cross-worker behavior. The in-memory fallback is only for tests and local no-Redis development.
 
-Korean-primary copy is the UI policy. Interactive controls, validation errors, live regions, and connection or location status should use Korean-first wording. Keep the brand name `AethelDesk`, the security acronym `PIN`, YouTube naming, storage keys, API fields, and route names stable. See [`docs/ux/audit.md`](docs/ux/audit.md) for Task 9 findings and the Task 10 implementation summary.
+Korean-primary copy is the UI policy. Interactive controls, validation errors, live regions, and connection or location status should use Korean-first wording. Keep the brand name `AethelDesk`, the security acronym `PIN`, YouTube naming, storage keys, API fields, and route names stable. See [`docs/ux/audit.md`](docs/ux/audit.md) for Task 9 findings and the Task 10/15 implementation summaries.
 
 External frontend dependency policy:
 
 * The YouTube iframe API remains allowed for focus music.
-* The current frontend build should prefer local assets through Vite.
-* Google Fonts should be self-hosted or given a local fallback in a later approved task.
+* The current frontend build should prefer local assets through Vite and keep `frontend/dist/` as generated output only.
+* Tailwind CDN and Google Fonts are not runtime dependencies; local CSS owns layout, colors, and font fallback stacks.
+* New external CSS, script, or font origins require an approved asset task and static allowlist test update.
 
 Still out of scope for this modernization:
 
@@ -270,11 +278,15 @@ aetheldesk/
 |   |-- frontend_routes.py
 |   |-- main.py
 |   |-- redis_contract.py
+|   |-- room_auth_service.py
+|   |-- room_lifecycle.py
 |   |-- room_routes.py
+|   |-- room_session.py
 |   |-- room_service.py
 |   |-- room_store.py
 |   |-- scheduler.py
 |   |-- state.py
+|   |-- state_codec.py
 |   `-- websocket_handler.py
 |-- frontend/
 |   |-- app.js
@@ -282,7 +294,13 @@ aetheldesk/
 |   |-- lobby.js
 |   |-- room.html
 |   |-- scenes.js
+|   |-- styles/
 |   `-- src/
+|       |-- room-controller.js
+|       |-- room-connection.js
+|       |-- room-renderer.js
+|       |-- timer-view.js
+|       `-- scenes/
 |-- tests/
 |   |-- e2e/
 |   |-- test_backend_routes.py

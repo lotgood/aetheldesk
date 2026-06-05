@@ -71,6 +71,7 @@ pythonVersion = "3.12"
 pythonPlatform = "Linux"
 typeCheckingMode = "basic"
 include = ["backend", "tests"]
+strict = ["backend/auth.py"]
 exclude = [
     "**/__pycache__",
     ".git",
