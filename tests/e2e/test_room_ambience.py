@@ -8,6 +8,28 @@ from playwright.sync_api import Browser, Page, expect
 
 
 EVIDENCE_DIR = Path(__file__).resolve().parents[2] / ".omo" / "evidence"
+WRAP_AUDIO_CONTEXT = "\n".join(
+    (
+        "(() => {",
+        "  const Native = window.AudioContext || window.webkitAudioContext;",
+        "  window.__aethelAudio = { contexts: [], gains: [] };",
+        "  if (!Native) return;",
+        "  class WrappedAudioContext extends Native {",
+        "    constructor(...args) {",
+        "      super(...args);",
+        "      window.__aethelAudio.contexts.push(this);",
+        "    }",
+        "    createGain(...args) {",
+        "      const gain = super.createGain(...args);",
+        "      window.__aethelAudio.gains.push(gain);",
+        "      return gain;",
+        "    }",
+        "  }",
+        "  window.AudioContext = WrappedAudioContext;",
+        "  window.webkitAudioContext = WrappedAudioContext;",
+        "})();",
+    )
+)
 
 
 def _room_id(prefix: str) -> str:
@@ -29,6 +51,31 @@ def _join_from_lobby(page: Page, live_server: str, room_id: str, pin: str) -> No
     page.locator("#pin-input").fill(pin)
     page.locator("#btn-start").click()
     expect(page).to_have_url(f"{live_server}/room/{room_id}")
+
+
+@pytest.mark.e2e
+def test_ambience_enable_starts_audible_default_mix(browser: Browser, live_server: str) -> None:
+    room_id = _room_id("SOUN")
+    context = browser.new_context()
+    context.add_init_script(WRAP_AUDIO_CONTEXT)
+    page = context.new_page()
+
+    try:
+        _create_via_lobby(page, live_server, room_id, "2468")
+        expect(page.locator("#conn-status")).to_contain_text("방이 연결되었습니다")
+        page.locator("#btn-ambience").click()
+        expect(page.locator("#ambience-panel")).to_be_visible()
+        page.locator("#ambience-enabled").check()
+
+        expect(page.locator("#ambience-enabled")).to_be_checked()
+        expect(page.locator("#ambience-rain")).to_have_value("35")
+        expect(page.locator("#ambience-brown-noise")).to_have_value("25")
+        page.wait_for_function(
+            "() => window.__aethelAudio.gains.slice(1).some(gain => gain.gain.value > 0)",
+        )
+        assert page.evaluate("() => window.__aethelAudio.contexts.every(ctx => ctx.state === 'running')")
+    finally:
+        context.close()
 
 
 @pytest.mark.e2e

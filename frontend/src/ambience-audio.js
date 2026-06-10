@@ -1,6 +1,7 @@
 import { byId, setHiddenInteraction } from "./dom.js";
 
 const LAYER_GAIN = { rain: 0.22, wind: 0.16, brown_noise: 0.2 };
+const DEFAULT_LAYER_VOLUME = { rain: 35, wind: 0, brown_noise: 25 };
 const FILTERS = {
   rain: { type: "highpass", frequency: 900 },
   wind: { type: "lowpass", frequency: 500 },
@@ -49,6 +50,30 @@ export function createAmbienceController({ getState, send }) {
     status.textContent = message;
   }
 
+  function sliderLayerValues() {
+    return Object.fromEntries(sliders.map(slider => [slider.dataset.ambienceLayer, Number(slider.value)]));
+  }
+
+  function hasAudibleLayer(layers) {
+    return Object.values(layers).some(volume => volume > 0);
+  }
+
+  function setSliderValue(layer, volume) {
+    const slider = sliders.find(item => item.dataset.ambienceLayer === layer);
+    if (!slider) return;
+    slider.value = String(volume);
+    slider.setAttribute("aria-valuetext", `${volume}%`);
+  }
+
+  function primeDefaultMixIfSilent() {
+    if (hasAudibleLayer(getState()?.ambience?.layers || {}) || hasAudibleLayer(sliderLayerValues())) return false;
+    for (const [layer, volume] of Object.entries(DEFAULT_LAYER_VOLUME)) {
+      setSliderValue(layer, volume);
+      if (volume > 0) send({ type: "ambience_set_layer", layer, volume });
+    }
+    return true;
+  }
+
   function ensureAudio() {
     if (ctx) {
       ctx.resume?.();
@@ -92,8 +117,15 @@ export function createAmbienceController({ getState, send }) {
   byId("ambience-close").addEventListener("click", () => setPanelOpen(false));
   enabledInput.addEventListener("change", () => {
     ensureAudio();
-    send({ type: "ambience_set_enabled", enabled: enabledInput.checked });
-    setStatus(enabledInput.checked ? "주변 소리를 켰습니다." : "주변 소리를 껐습니다.");
+    const enabled = enabledInput.checked;
+    const primedDefaultMix = enabled && primeDefaultMixIfSilent();
+    send({ type: "ambience_set_enabled", enabled });
+    const statusMessage = primedDefaultMix
+      ? "주변 소리를 기본 믹스로 켰습니다."
+      : enabled
+        ? "주변 소리를 켰습니다."
+        : "주변 소리를 껐습니다.";
+    setStatus(statusMessage);
   });
   sliders.forEach(slider => {
     slider.addEventListener("input", () => {

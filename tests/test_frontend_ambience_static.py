@@ -25,6 +25,7 @@ def test_ambience_ui_uses_generated_audio_and_shared_state_only():
     assert "ambience.syncAmbience(state.ambience)" in room_state
     assert "AudioContext" in ambience
     assert "createBuffer" in ambience
+    assert "DEFAULT_LAYER_VOLUME" in ambience
     assert "ambience_set_enabled" in ambience
     assert "ambience_set_layer" in ambience
     assert "localStorage" not in combined
