@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from backend import main as backend_main_module
 from backend import state as backend_state_module
+from backend.state import AmbienceState, RoomCheckIn, RoomIntent, RoomMetrics, SceneName
 
 
 class MusicState(TypedDict):
@@ -31,6 +32,11 @@ BackendState = TypedDict(
         "sessions_done": int,
         "music": MusicState,
         "time_override": str | None,
+        "intent": RoomIntent,
+        "checkins": list[RoomCheckIn],
+        "scene": SceneName,
+        "ambience": AmbienceState,
+        "metrics": RoomMetrics,
     },
 )
 
@@ -75,6 +81,11 @@ def make_timer_state(
         "sessions_done": sessions_done,
         "music": {"playing": music_playing, "video_id": video_id},
         "time_override": time_override,
+        "intent": {"goal": "", "tasks": [], "active_task_id": None},
+        "checkins": [],
+        "scene": "sky",
+        "ambience": {"enabled": False, "layers": {"rain": 0, "wind": 0, "brown_noise": 0}},
+        "metrics": {"focus_seconds": 0, "sessions_completed": 0, "tasks_completed": 0},
     }
 
 

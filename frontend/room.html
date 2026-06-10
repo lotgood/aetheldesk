@@ -129,6 +129,50 @@
     </div>
   </div>
 
+  <section id="intent-panel" class="intent-panel liquid-glass animate-fade-rise-delay" aria-labelledby="intent-title">
+    <div class="intent-panel__header">
+      <span id="intent-title" class="ui-label">방 목표</span>
+      <span id="intent-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></span>
+    </div>
+    <p id="intent-goal-text" class="intent-goal-text">목표를 정해 주세요.</p>
+    <div class="intent-inline-row">
+      <label for="intent-goal-input" class="sr-only">방 목표</label>
+      <input id="intent-goal-input" type="text" maxlength="120" autocomplete="off"
+        placeholder="오늘의 집중 목표" aria-describedby="intent-status" />
+      <button id="intent-goal-save" type="button" class="intent-mini-btn">저장</button>
+    </div>
+    <p id="intent-active-task" class="intent-active-task">선택한 작업 없음</p>
+    <ul id="intent-task-list" class="intent-task-list" aria-label="방 작업 목록"></ul>
+    <div class="intent-inline-row">
+      <label for="intent-task-input" class="sr-only">작업 추가</label>
+      <input id="intent-task-input" type="text" maxlength="80" autocomplete="off"
+        placeholder="작업 추가" aria-describedby="intent-status" />
+      <button id="intent-task-add" type="button" class="intent-mini-btn">작업 추가</button>
+    </div>
+    <button id="intent-clear-completed" type="button" class="intent-clear-btn">완료 정리</button>
+    <div id="checkins-panel" class="checkins-panel" aria-labelledby="checkins-title">
+      <div class="checkins-header">
+        <span id="checkins-title" class="ui-label">체크인</span>
+        <button id="checkin-clear" type="button" class="intent-clear-btn">비우기</button>
+      </div>
+      <p id="checkin-briefing" class="checkin-briefing">준비, 진행 중, 완료를 남겨 주세요.</p>
+      <div class="checkin-actions" role="group" aria-label="체크인 추가">
+        <button id="checkin-ready" type="button" class="checkin-kind-btn" data-checkin-kind="ready">준비</button>
+        <button id="checkin-progress" type="button" class="checkin-kind-btn" data-checkin-kind="progress">진행 중</button>
+        <button id="checkin-done" type="button" class="checkin-kind-btn" data-checkin-kind="done">완료</button>
+      </div>
+      <div class="intent-inline-row">
+        <label for="checkin-text-input" class="sr-only">체크인 메모</label>
+        <input id="checkin-text-input" type="text" maxlength="80" autocomplete="off"
+          placeholder="짧은 상태 메모" aria-describedby="checkin-status" />
+      </div>
+      <ul id="checkin-list" class="checkin-list" aria-label="방 체크인 목록"></ul>
+      <p id="celebration-prompt" class="checkin-celebration" hidden></p>
+      <span id="checkin-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></span>
+    </div>
+    <p id="room-recap" class="room-recap">이 방에서 0회 집중 · 0분 · 완료 0개</p>
+  </section>
+
   <!-- ─────────────────────────────────────────────────────────────
        HUD: top-right → conn dot + clock + date
        ───────────────────────────────────────────────────────────── -->
@@ -247,8 +291,36 @@
     </div>
 
     <!-- Action bar: always visible -->
+    <div id="ambience-panel" class="ambience-panel liquid-glass" role="group" aria-label="주변 소리" hidden inert>
+      <label class="ambience-toggle">
+        <input id="ambience-enabled" type="checkbox" aria-describedby="ambience-status" />
+        <span>소리 켜기</span>
+      </label>
+      <label class="ambience-layer" for="ambience-rain">
+        <span>비</span>
+        <input id="ambience-rain" type="range" min="0" max="100" value="0" data-ambience-layer="rain" />
+      </label>
+      <label class="ambience-layer" for="ambience-wind">
+        <span>바람</span>
+        <input id="ambience-wind" type="range" min="0" max="100" value="0" data-ambience-layer="wind" />
+      </label>
+      <label class="ambience-layer" for="ambience-brown-noise">
+        <span>브라운</span>
+        <input id="ambience-brown-noise" type="range" min="0" max="100" value="0" data-ambience-layer="brown_noise" />
+      </label>
+      <button id="ambience-close" type="button" class="ctrl-btn">닫기</button>
+      <span id="ambience-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></span>
+    </div>
+    <div id="scene-menu" class="scene-menu liquid-glass" role="group" aria-label="장면 선택" hidden inert>
+      <button type="button" class="scene-option" data-scene-option="sky" aria-pressed="true">하늘</button>
+      <button type="button" class="scene-option" data-scene-option="city" aria-pressed="false">도시</button>
+      <button type="button" class="scene-option" data-scene-option="beach" aria-pressed="false">해변</button>
+      <button type="button" class="scene-option" data-scene-option="forest" aria-pressed="false">숲</button>
+    </div>
     <div id="action-bar" class="ctrl-bar liquid-glass">
-      <button id="btn-scene"     class="ctrl-btn" aria-label="장면 바꾸기: 하늘" aria-describedby="scene-options">◈ 하늘</button>
+      <button id="btn-scene"     class="ctrl-btn" aria-label="장면 선택: 하늘" aria-describedby="scene-options" aria-controls="scene-menu" aria-expanded="false">◈ 하늘</button>
+      <span class="ctrl-sep"></span>
+      <button id="btn-ambience"  class="ctrl-btn" aria-controls="ambience-panel" aria-expanded="false" aria-describedby="ambience-status">≋ 소리</button>
       <span class="ctrl-sep"></span>
       <button id="btn-add-track" class="ctrl-btn" aria-describedby="track-error">+ 트랙</button>
       <span class="ctrl-sep"></span>

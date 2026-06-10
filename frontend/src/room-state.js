@@ -1,7 +1,7 @@
 import { playChime, tickClock, tickDate } from "./room-renderer.js";
 
 
-export function createRoomStateApplier({ playlist, renderer, timers, music }) {
+export function createRoomStateApplier({ playlist, renderer, timers, music, intent, checkins, recap, ambience }) {
   let currentState = null;
 
   function getState() {
@@ -9,7 +9,8 @@ export function createRoomStateApplier({ playlist, renderer, timers, music }) {
   }
 
   function applyState(state) {
-    const prevBreak = currentState?.break;
+    const previousState = currentState;
+    const prevBreak = previousState?.break;
     currentState = state;
 
     if (!prevBreak && state.break) playChime();
@@ -18,12 +19,17 @@ export function createRoomStateApplier({ playlist, renderer, timers, music }) {
     const playlistIndex = playlist.ids.indexOf(state.music.video_id);
     if (playlistIndex !== -1) playlist.index = playlistIndex;
 
+    renderer.applyScene(state.scene);
     renderer.renderCelestial(state.celestial);
     renderer.renderFocus(state.focus, state.pomodoro_remaining, state.break, state.break_remaining, state.paused);
     renderer.renderSatellite(state);
     renderer.renderSessions(state.sessions_done);
     timers.updateDurChips(Math.round(state.pomodoro_duration / 60));
     music.syncYT(state.music);
+    intent.renderIntent(state.intent);
+    checkins.renderCheckins(state, previousState);
+    recap.renderRecap(state.metrics);
+    ambience.syncAmbience(state.ambience);
     timers.syncSlider(state);
     tickClock();
     tickDate();

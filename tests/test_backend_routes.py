@@ -123,6 +123,33 @@ def assert_no_secret_fields(payload: dict[str, Any]) -> None:
     assert "token_hash" not in payload
 
 
+def assert_plaintext_secret_not_stored(redis: FakeRedis, secret: str) -> None:
+    for key in [*redis.values.keys(), *redis.sets.keys()]:
+        assert secret not in key.split(":")
+
+    for bucket in redis.sets.values():
+        assert secret not in bucket
+
+    for raw_value in redis.values.values():
+        assert raw_value != secret
+        try:
+            decoded = json.loads(raw_value)
+        except json.JSONDecodeError:
+            continue
+        assert_plaintext_secret_not_in_json(decoded, secret)
+
+
+def assert_plaintext_secret_not_in_json(value: object, secret: str) -> None:
+    if isinstance(value, dict):
+        for item in value.values():
+            assert_plaintext_secret_not_in_json(item, secret)
+    elif isinstance(value, list):
+        for item in value:
+            assert_plaintext_secret_not_in_json(item, secret)
+    elif isinstance(value, str):
+        assert value != secret
+
+
 def test_create_room_uppercases_id_returns_token_without_pin_or_hash(api_client: tuple[TestClient, FakeRedis]):
     client, redis = api_client
 
@@ -133,8 +160,8 @@ def test_create_room_uppercases_id_returns_token_without_pin_or_hash(api_client:
     assert payload["room_id"] == "MIXD"
     assert isinstance(payload["token"], str) and payload["token"]
     assert_no_secret_fields(payload)
-    assert "2468" not in json.dumps(redis.values)
-    assert payload["token"] not in json.dumps(redis.values)
+    assert_plaintext_secret_not_stored(redis, "2468")
+    assert_plaintext_secret_not_stored(redis, payload["token"])
 
 
 def test_create_room_generates_uppercase_id_and_join_returns_token_only(api_client: tuple[TestClient, FakeRedis]):

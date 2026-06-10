@@ -56,3 +56,44 @@ def test_state_codec_rejects_wrong_field_types():
     state = dict(sample_state())
     state["focus"] = "true"
     assert validate_state_snapshot(cast(object, state)) is None
+
+
+def test_state_codec_rejects_malformed_feature_state_shapes():
+    from backend.state_codec import validate_state_snapshot
+
+    state = sample_state()
+
+    missing_task_text = dict(state)
+    missing_task_text["intent"] = {
+        "goal": "",
+        "tasks": [{"id": "task_0001", "done": False}],
+        "active_task_id": None,
+    }
+
+    bad_checkin_kind = dict(state)
+    bad_checkin_kind["checkins"] = [{"id": "check_001", "kind": "chat", "text": "hello"}]
+
+    bad_ambience_volume = dict(state)
+    bad_ambience_volume["ambience"] = {
+        "enabled": False,
+        "layers": {"rain": 101, "wind": 0, "brown_noise": 0},
+    }
+
+    bad_metrics = dict(state)
+    bad_metrics["metrics"] = {"focus_seconds": -1, "sessions_completed": 0, "tasks_completed": 0}
+
+    duplicate_task_ids = dict(state)
+    duplicate_task_ids["intent"] = {
+        "goal": "",
+        "tasks": [
+            {"id": "task_0001", "text": "first", "done": False},
+            {"id": "task_0001", "text": "second", "done": False},
+        ],
+        "active_task_id": "task_0001",
+    }
+
+    assert validate_state_snapshot(missing_task_text) is None
+    assert validate_state_snapshot(bad_checkin_kind) is None
+    assert validate_state_snapshot(bad_ambience_volume) is None
+    assert validate_state_snapshot(bad_metrics) is None
+    assert validate_state_snapshot(duplicate_task_ids) is None

@@ -20,6 +20,7 @@ export function createRoomRenderer({ sceneController }) {
   return {
     renderCelestial: celestial.renderCelestial,
     renderFocus: timerView.renderFocus,
+    applyScene: sceneController.applyScene,
     renderSatellite: celestial.renderSatellite,
     renderSessions,
     resetForResize: celestial.resetForResize,

@@ -1,4 +1,5 @@
 import { readScene, storeScene } from "./src/storage.js";
+import { setHiddenInteraction } from "./src/dom.js";
 import { createBeachScene } from "./src/scenes/beach.js";
 import { createCityScene } from "./src/scenes/city.js";
 import { createForestScene } from "./src/scenes/forest.js";
@@ -28,13 +29,18 @@ function updateSceneControl(name) {
   if (btn) {
     btn.textContent = `◈ ${SCENE_LABELS[name]}`;
     btn.dataset.activeScene = name;
-    btn.setAttribute("aria-label", `장면 바꾸기: ${SCENE_LABELS[name]}`);
+    btn.setAttribute("aria-label", `장면 선택: ${SCENE_LABELS[name]}`);
     btn.setAttribute("aria-describedby", "scene-options");
   }
   const options = document.getElementById("scene-options");
   if (options) {
     options.textContent = `장면: ${SCENE_OPTION_TEXT}. 현재 선택은 ${SCENE_LABELS[name]}입니다.`;
   }
+  document.querySelectorAll("[data-scene-option]").forEach(option => {
+    const active = option.dataset.sceneOption === name;
+    option.dataset.active = String(active);
+    option.setAttribute("aria-pressed", active ? "true" : "false");
+  });
   document.body.dataset.scene = name === "sky" ? "" : name;
 }
 
@@ -79,7 +85,11 @@ function renderScene(c) {
 }
 
 
-function switchScene(name) {
+function applyScene(name) {
+  if (!SCENES.includes(name) || activeScene === name) {
+    updateSceneControl(activeScene);
+    return;
+  }
   stopAllScenes();
   resetSceneState();
   SCENES.filter(scene => scene !== "sky").forEach(scene => {
@@ -98,9 +108,31 @@ function switchScene(name) {
 }
 
 
-function bindSceneButton() {
+function setSceneMenuOpen(open) {
+  const menu = document.getElementById("scene-menu");
+  const btn = document.getElementById("btn-scene");
+  if (!menu || !btn) return;
+  menu.hidden = !open;
+  setHiddenInteraction(menu, !open);
+  btn.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+
+function bindSceneControls(send) {
   document.getElementById("btn-scene")?.addEventListener("click", () => {
-    switchScene(SCENES[(SCENES.indexOf(activeScene) + 1) % SCENES.length]);
+    const menu = document.getElementById("scene-menu");
+    setSceneMenuOpen(menu?.hidden !== false);
+  });
+  document.querySelectorAll("[data-scene-option]").forEach(option => {
+    option.addEventListener("click", () => {
+      const name = option.dataset.sceneOption;
+      if (SCENES.includes(name)) {
+        storeScene(name);
+        applyScene(name);
+        send({ type: "scene_select", scene: name });
+      }
+      setSceneMenuOpen(false);
+    });
   });
 }
 
@@ -117,12 +149,13 @@ function resetForResize() {
 initSceneButton();
 
 
-export function createSceneController() {
-  bindSceneButton();
+export function createSceneController({ send = () => {} } = {}) {
+  bindSceneControls(send);
   return {
     render: renderScene,
+    applyScene,
     resetForResize,
-    switchScene,
+    switchScene: applyScene,
     getActiveScene: () => activeScene,
   };
 }

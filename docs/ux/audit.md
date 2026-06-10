@@ -183,3 +183,14 @@ Task 15 closed the remaining mobile, touch, reduced-motion, and scene discoverab
 - Reduced-motion emulation disables decorative CSS animation and leaves scene canvas output stable while room WebSocket sync continues. Evidence is recorded in `.omo/evidence/task-15-reduced-motion.txt`.
 - The scene control exposes available scenes and the current selected scene through `aria-describedby="scene-options"` and continues to announce changes through `#room-status`.
 - Evidence for the full browser pass is recorded in `.omo/evidence/task-15-mobile-touch.txt` and `.omo/evidence/task-15-e2e-full.txt`.
+
+## Feature Roadmap 2026 UX Handoff
+
+The 2026 feature roadmap adds shared-room collaboration surfaces while preserving Korean-primary copy, Vite vanilla ES modules, PIN secrecy, full-state WebSocket snapshots, and the existing storage boundary.
+
+- Room goals/tasks live in the left intent panel. Goal, task, active-task, and completion controls render user text with `textContent`, cap task count at 8, and announce state changes through the existing status regions.
+- Check-ins are explicit room notes, not presence. They support `준비`, `진행 중`, and `완료`, prune to 12 entries, and intentionally omit author, token, PIN, or online/offline fields.
+- Scene selection is now an accessible menu. `localStorage.scene` remains a startup preference, but server `state.scene` wins once a room snapshot arrives.
+- Ambient sound controls use generated Web Audio only. There is no external audio origin, no autoplay, and no new storage key; audio starts only after user interaction unlocks the audio context.
+- Recap text is a small Korean row in the room panel: `이 방에서 N회 집중 · N분 · 완료 N개`. It is derived from room-local metrics in the WebSocket snapshot and expires with the room lifecycle.
+- Browser evidence for these surfaces is recorded in `.omo/evidence/task-1-room-intent-sync.png`, `.omo/evidence/task-2-room-checkins-sync.png`, `.omo/evidence/task-3-scene-shared.png`, `.omo/evidence/task-4-ambience-sync.png`, and `.omo/evidence/task-5-room-recap.png`.

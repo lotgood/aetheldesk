@@ -160,6 +160,8 @@ def test_two_client_sync_reload_reconnect_and_scene(browser: Browser, live_serve
 
     _reveal_controls(page_a)
     page_a.locator("#btn-scene").click(force=True)
+    expect(page_a.locator("#scene-menu")).to_be_visible()
+    page_a.locator('[data-scene-option="city"]').click()
     page_a.wait_for_function("() => localStorage.getItem('scene') !== null")
     expect(page_a.locator("#room-status")).to_have_text("도시 장면으로 바꿨습니다.")
     local_keys = _local_storage_keys(page_a)
@@ -170,7 +172,7 @@ def test_two_client_sync_reload_reconnect_and_scene(browser: Browser, live_serve
         "task-12-sync-notes.txt",
         [
             f"room_id={room_id}",
-            "verified=focus_toggle_via_#focus-btn,duration,tab_title_focus_pause_reload_idle,music_play_pause_skip,time_override_reset,reload_state,reconnect_recovery,scene_storage",
+            "verified=focus_toggle_via_#focus-btn,duration,tab_title_focus_pause_reload_idle,music_play_pause_skip,time_override_reset,reload_state,reconnect_recovery,scene_menu_storage",
             "screenshots=task-12-two-client-focus.png,task-12-reload-state.png",
         ],
     )
@@ -272,6 +274,8 @@ def test_mobile_touch_and_reduced_motion_evidence(browser: Browser, live_server:
         tablet_page.screenshot(path=str(EVIDENCE_DIR / "task-15-mobile-tablet.png"), full_page=True)
 
         portrait_page.locator("#btn-scene").click(force=True)
+        expect(portrait_page.locator("#scene-menu")).to_be_visible()
+        portrait_page.locator('[data-scene-option="city"]').click()
         portrait_page.wait_for_function("() => document.body.dataset.scene === 'city'")
         portrait_page.wait_for_function(
             "() => getComputedStyle(document.getElementById('city-canvas')).opacity === '1'"
@@ -292,7 +296,7 @@ def test_mobile_touch_and_reduced_motion_evidence(browser: Browser, live_server:
             [
                 f"room_id={room_id}",
                 "viewports=390x844,768x1024,844x390",
-                "verified=no_overlap,touch_controls_visible,reduced_motion_css_disabled,city_canvas_stable,scene_accessible_options,scene_status_announcement",
+            "verified=no_overlap,touch_controls_visible,reduced_motion_css_disabled,city_canvas_stable,scene_accessible_menu,scene_status_announcement",
                 "screenshots=task-15-mobile-portrait.png,task-15-mobile-tablet.png,task-15-mobile-landscape.png",
             ],
         )

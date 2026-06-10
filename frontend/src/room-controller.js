@@ -1,9 +1,13 @@
 import { createSceneController } from "../scenes.js";
 import { byId } from "./dom.js";
 import { createExitConfirm } from "./exit-confirm.js";
+import { createAmbienceController } from "./ambience-audio.js";
 import { bindLocationStatus } from "./location-status.js";
 import { createMusicController } from "./music-youtube.js";
+import { createRoomCheckinsController } from "./room-checkins.js";
+import { createRoomIntentController } from "./room-intent.js";
 import { createRoomConnection } from "./room-connection.js";
+import { createRoomRecapController } from "./room-recap.js";
 import { createRoomRenderer, startClock } from "./room-renderer.js";
 import { createRoomStateApplier } from "./room-state.js";
 import { createPlaylistState } from "./storage.js";
@@ -21,11 +25,15 @@ export function startRoomApp() {
   let getCurrentState = () => null;
   const send = msg => socket.send(msg);
   const playlist = createPlaylistState();
-  const sceneController = createSceneController();
+  const sceneController = createSceneController({ send });
   const renderer = createRoomRenderer({ sceneController });
   const timers = createTimerControls({ getState: () => getCurrentState(), send });
   const music = createMusicController({ playlist, getState: () => getCurrentState(), send });
-  const roomState = createRoomStateApplier({ playlist, renderer, timers, music });
+  const intent = createRoomIntentController({ getState: () => getCurrentState(), send });
+  const checkins = createRoomCheckinsController({ getState: () => getCurrentState(), send });
+  const recap = createRoomRecapController();
+  const ambience = createAmbienceController({ getState: () => getCurrentState(), send });
+  const roomState = createRoomStateApplier({ playlist, renderer, timers, music, intent, checkins, recap, ambience });
   getCurrentState = roomState.getState;
 
   socket = createRoomConnection({ roomId, onState: roomState.applyState });

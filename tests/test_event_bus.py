@@ -96,6 +96,26 @@ def test_publish_state_uses_contract_channel_and_full_snapshot_envelope():
     assert decoded["data"] == state
 
 
+def test_published_snapshot_includes_feature_contract_defaults():
+    redis = FakeRedis()
+    manager = LocalConnectionManager()
+    bus = RedisStateEventBus(redis, worker_id="worker-a", connections=manager)
+    state = sample_state(remaining=37)
+
+    async def run() -> dict[str, object]:
+        return await bus.publish_state("room-a", state)
+
+    envelope = asyncio.run(run())
+    data = envelope["data"]
+
+    assert isinstance(data, dict)
+    assert data["intent"] == {"goal": "", "tasks": [], "active_task_id": None}
+    assert data["checkins"] == []
+    assert data["scene"] == "sky"
+    assert data["ambience"] == {"enabled": False, "layers": {"rain": 0, "wind": 0, "brown_noise": 0}}
+    assert data["metrics"] == {"focus_seconds": 0, "sessions_completed": 0, "tasks_completed": 0}
+
+
 def test_dispatch_ignores_self_origin_and_duplicate_event_ids():
     redis = FakeRedis()
     manager = LocalConnectionManager()

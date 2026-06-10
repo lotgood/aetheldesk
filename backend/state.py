@@ -1,11 +1,13 @@
 from datetime import datetime, timezone
 from importlib import import_module
-from typing import TYPE_CHECKING, Protocol, TypedDict, cast
+from typing import TYPE_CHECKING, Literal, Protocol, TypedDict, cast
 
 try:
     from backend import client_messages
+    from backend.state_features import apply_room_feature_command
 except ModuleNotFoundError:
     import client_messages
+    from state_features import apply_room_feature_command
 
 if TYPE_CHECKING:
     from backend.client_messages import (
@@ -39,6 +41,66 @@ MusicState = TypedDict(
     },
 )
 
+RoomTask = TypedDict(
+    "RoomTask",
+    {
+        "id": str,
+        "text": str,
+        "done": bool,
+    },
+)
+
+
+RoomIntent = TypedDict(
+    "RoomIntent",
+    {
+        "goal": str,
+        "tasks": list[RoomTask],
+        "active_task_id": str | None,
+    },
+)
+
+
+RoomCheckIn = TypedDict(
+    "RoomCheckIn",
+    {
+        "id": str,
+        "kind": Literal["ready", "progress", "done"],
+        "text": str,
+    },
+)
+
+
+AmbienceLayers = TypedDict(
+    "AmbienceLayers",
+    {
+        "rain": int,
+        "wind": int,
+        "brown_noise": int,
+    },
+)
+
+
+AmbienceState = TypedDict(
+    "AmbienceState",
+    {
+        "enabled": bool,
+        "layers": AmbienceLayers,
+    },
+)
+
+
+RoomMetrics = TypedDict(
+    "RoomMetrics",
+    {
+        "focus_seconds": int,
+        "sessions_completed": int,
+        "tasks_completed": int,
+    },
+)
+
+SceneName = Literal["sky", "city", "beach", "forest"]
+
 
 BackendState = TypedDict(
     "BackendState",
@@ -53,6 +115,11 @@ BackendState = TypedDict(
         "sessions_done": int,
         "music": MusicState,
         "time_override": str | None,
+        "intent": RoomIntent,
+        "checkins": list[RoomCheckIn],
+        "scene": SceneName,
+        "ambience": AmbienceState,
+        "metrics": RoomMetrics,
     },
 )
 
@@ -78,6 +145,11 @@ def make_state(celestial_provider: GetCelestialState | None = None) -> BackendSt
         "sessions_done": 0,
         "music": {"playing": False, "video_id": "jfKfPfyJRdk"},
         "time_override": None,
+        "intent": {"goal": "", "tasks": [], "active_task_id": None},
+        "checkins": [],
+        "scene": "sky",
+        "ambience": {"enabled": False, "layers": {"rain": 0, "wind": 0, "brown_noise": 0}},
+        "metrics": {"focus_seconds": 0, "sessions_completed": 0, "tasks_completed": 0},
     }
 
 
@@ -86,10 +158,12 @@ def advance_timer_state(state: BackendState) -> bool:
 
     if state["focus"] and not state["paused"] and state["pomodoro_remaining"] > 0:
         state["pomodoro_remaining"] -= 1
+        state["metrics"]["focus_seconds"] += 1
         needs_broadcast = True
         if state["pomodoro_remaining"] == 0:
             state["focus"] = False
             state["sessions_done"] += 1
+            state["metrics"]["sessions_completed"] += 1
             break_secs = 1500 if state["sessions_done"] % 4 == 0 else 600
             state["break"] = True
             state["break_remaining"] = break_secs
@@ -153,3 +227,5 @@ async def handle(
         lat, lon = location["lat"], location["lon"]
         dt = _parse_iso(state["time_override"]) if state["time_override"] else None
         state["celestial"] = provider(lat=lat, lon=lon, dt=dt)
+    else:
+        apply_room_feature_command(state, command)

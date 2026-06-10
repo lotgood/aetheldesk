@@ -138,7 +138,7 @@ def test_scene_system_is_es_module_without_required_window_global():
 
     assert SCENES_JS.exists()
     assert 'import { createSceneController } from "../scenes.js";' in controller_source
-    assert "export function createSceneController()" in scenes_source
+    assert "export function createSceneController(" in scenes_source
     assert "render: renderScene" in scenes_source
     assert "sceneController.render(c);" in (SRC / "celestial-renderer.js").read_text()
     assert "window.AethelScenes" not in controller_source + scenes_source

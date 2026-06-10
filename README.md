@@ -10,7 +10,7 @@
   <img alt="Python 3.12" src="https://img.shields.io/badge/python-3.12-3776ab?style=flat-square">
 </p>
 
-AethelDesk is a small shared-room dashboard for focus sessions, celestial ambience, and synchronized lofi controls. Run it on your Mac, open the same PIN-protected room on your iPad, and keep both screens in sync.
+AethelDesk is a small shared-room dashboard for focus sessions, celestial ambience, shared goals, check-ins, room scenes, ambient layers, and synchronized lofi controls. Run it on your Mac, open the same PIN-protected room on your iPad, and keep both screens in sync.
 
 ## Architecture
 
@@ -20,7 +20,7 @@ AethelDesk keeps room coordination server owned while the browser client stays l
 * Backend: FastAPI serves `/`, `/room/{room_id}`, REST room APIs, WebSockets, `/health`, Vite hashed assets at `/assets/*` when `frontend/dist/assets` exists, and source frontend files as a no-cache fallback.
 * Static cache policy: route-owned HTML uses `Cache-Control: no-cache`, Vite hashed `/assets/*` uses `public, max-age=31536000, immutable`, and root static fallback uses `no-cache`.
 * Backend boundaries: runtime globals, room auth/lifecycle, client message parsing, state codec, and WebSocket session orchestration are split into focused modules under `backend/`.
-* Frontend boundaries: `frontend/app.js` only starts the room app; controller, connection, state application, renderer, timer view, scenes, music, location, and exit confirmation live in ES modules.
+* Frontend boundaries: `frontend/app.js` only starts the room app; controller, connection, state application, renderer, timer view, scenes, music, location, shared room feature panels, and exit confirmation live in ES modules.
 * Room state: Redis stores the canonical JSON room state and metadata with keys such as `aetheldesk:room:{ROOM_ID}:state` and `aetheldesk:room:{ROOM_ID}:meta`.
 * Sync: Redis Pub/Sub publishes full-state room snapshots on `aetheldesk:room:{ROOM_ID}:events`; each worker fans updates out only to its own local WebSockets.
 * Scheduler: every worker may run the scheduler, but room timer and celestial ticks mutate state only after the worker acquires the per-room Redis tick lock.
@@ -39,6 +39,11 @@ See [`docs/architecture/contracts.md`](docs/architecture/contracts.md) for the r
 | Shared rooms | `/room/{room_id}` serves the Vite room page for the same shared session. |
 | Room PIN access | Create and join flows require a PIN and return an opaque session token. |
 | Focus mode | Starts a Pomodoro timer with hidden YouTube playback. |
+| Shared focus plan | Room goals, active task selection, and a bounded task list sync through room snapshots. |
+| Guided check-ins | Explicit ready/progress/done check-ins give lightweight accountability without chat or inferred presence. |
+| Shared scenes | Scene selection is room-shared after connection while `localStorage.scene` remains only a startup preference. |
+| Ambient mixer | Local Web Audio rain, wind, and brown-noise layers sync through room state after user interaction unlocks audio. |
+| Ephemeral recap | Room-local focus seconds, completed sessions, and completed tasks render as Korean recap text and expire with the room. |
 | Music sync | Play, pause, and skip controls broadcast to all connected clients. |
 | Touch-friendly controls | Desktop controls auto-hide after idle; touch devices keep controls available. |
 | Korean-primary UI | Interactive copy and status text use Korean-first wording while keeping `AethelDesk`, `PIN`, and YouTube terms stable. |
@@ -251,6 +256,11 @@ Without these settings, room sync can fail or disconnect unexpectedly.
 | Time slider | Drag to override sun position; double-click to return to real time. |
 | Focus button | Toggles the Pomodoro timer and hidden music playback. |
 | Music buttons | Play, pause, and skip are shared across connected clients. |
+| Room plan | Save a room goal, add up to 8 tasks, select the active task, and mark tasks complete. |
+| Check-ins | Add `준비`, `진행 중`, or `완료` notes; clear the room-local check-in list. |
+| Scene menu | Choose `하늘`, `도시`, `해변`, or `숲`; the server snapshot becomes authoritative once connected. |
+| Ambience panel | Enable generated ambient audio and tune rain, wind, and brown-noise layer volumes. |
+| Recap row | Shows room-local focus/session/task totals such as `이 방에서 2회 집중 · 48분 · 완료 3개`. |
 | Idle desktop UI | Controls fade after 3 seconds of mouse inactivity. |
 
 ## Troubleshooting
@@ -287,6 +297,7 @@ aetheldesk/
 |   |-- scheduler.py
 |   |-- state.py
 |   |-- state_codec.py
+|   |-- state_features.py
 |   `-- websocket_handler.py
 |-- frontend/
 |   |-- app.js
@@ -298,7 +309,11 @@ aetheldesk/
 |   `-- src/
 |       |-- room-controller.js
 |       |-- room-connection.js
+|       |-- room-checkins.js
+|       |-- room-intent.js
+|       |-- room-recap.js
 |       |-- room-renderer.js
+|       |-- ambience-audio.js
 |       |-- timer-view.js
 |       `-- scenes/
 |-- tests/
