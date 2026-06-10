@@ -54,6 +54,7 @@ RoomTask = TypedDict(
 RoomIntent = TypedDict(
     "RoomIntent",
     {
+        "enabled": bool,
         "goal": str,
         "tasks": list[RoomTask],
         "active_task_id": str | None,
@@ -145,7 +146,7 @@ def make_state(celestial_provider: GetCelestialState | None = None) -> BackendSt
         "sessions_done": 0,
         "music": {"playing": False, "video_id": "jfKfPfyJRdk"},
         "time_override": None,
-        "intent": {"goal": "", "tasks": [], "active_task_id": None},
+        "intent": {"enabled": True, "goal": "", "tasks": [], "active_task_id": None},
         "checkins": [],
         "scene": "sky",
         "ambience": {"enabled": False, "layers": {"rain": 0, "wind": 0, "brown_noise": 0}},

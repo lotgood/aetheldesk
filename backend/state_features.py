@@ -6,6 +6,7 @@ if TYPE_CHECKING:
         AmbienceSetEnabledCommand,
         AmbienceSetLayerCommand,
         ClientCommand,
+        IntentSetEnabledCommand,
         IntentSetGoalCommand,
         IntentTaskIdCommand,
         IntentTaskTextCommand,
@@ -24,6 +25,9 @@ def apply_room_feature_command(state: "BackendState", command: "ClientCommand") 
     if t == "intent_set_goal":
         intent_set_goal = cast("IntentSetGoalCommand", command)
         state["intent"]["goal"] = intent_set_goal["goal"]
+    elif t == "intent_set_enabled":
+        intent_set_enabled = cast("IntentSetEnabledCommand", command)
+        state["intent"]["enabled"] = intent_set_enabled["enabled"]
     elif t == "intent_add_task":
         intent_task = cast("IntentTaskTextCommand", command)
         task_id = intent_task["id"]

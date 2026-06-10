@@ -105,6 +105,37 @@ def test_room_auth_dialog_keeps_focus_inside_after_wrong_pin(browser: Browser, l
 
 
 @pytest.mark.e2e
+def test_mobile_room_goal_toggle_stays_visible(browser: Browser, live_server: str) -> None:
+    room_id = _room_id("GOAL")
+    context = browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)
+    page = context.new_page()
+
+    try:
+        _create_room(page, live_server, room_id, "1234")
+        panel = page.locator("#intent-panel")
+        toggle = page.locator("#intent-toggle")
+
+        expect(panel).to_be_visible()
+        expect(toggle).to_be_visible()
+        expect(panel).to_have_attribute("data-intent-enabled", "true")
+        toggle.click()
+
+        expect(panel).to_have_attribute("data-intent-enabled", "false")
+        expect(page.locator("#intent-off-note")).to_be_visible()
+        expect(page.locator("#intent-goal-input")).to_be_hidden()
+        box = panel.bounding_box()
+        assert box is not None
+        assert box["x"] >= 0 and box["y"] >= 0
+        assert box["x"] + box["width"] <= 390
+
+        toggle.click()
+        expect(panel).to_have_attribute("data-intent-enabled", "true")
+        expect(page.locator("#intent-goal-input")).to_be_visible()
+    finally:
+        context.close()
+
+
+@pytest.mark.e2e
 def test_font_network_blocked_pages_still_render(browser: Browser, live_server: str) -> None:
     EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
     blocked_font_urls: list[str] = []

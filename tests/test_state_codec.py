@@ -58,6 +58,18 @@ def test_state_codec_rejects_wrong_field_types():
     assert validate_state_snapshot(cast(object, state)) is None
 
 
+def test_state_codec_accepts_legacy_intent_without_enabled():
+    from backend.state_codec import validate_state_snapshot
+
+    state = dict(sample_state())
+    state["intent"] = {"goal": "", "tasks": [], "active_task_id": None}
+
+    validated = validate_state_snapshot(state)
+
+    assert validated is not None
+    assert validated["intent"]["enabled"] is True
+
+
 def test_state_codec_rejects_malformed_feature_state_shapes():
     from backend.state_codec import validate_state_snapshot
 

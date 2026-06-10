@@ -109,7 +109,7 @@ def test_published_snapshot_includes_feature_contract_defaults():
     data = envelope["data"]
 
     assert isinstance(data, dict)
-    assert data["intent"] == {"goal": "", "tasks": [], "active_task_id": None}
+    assert data["intent"] == {"enabled": True, "goal": "", "tasks": [], "active_task_id": None}
     assert data["checkins"] == []
     assert data["scene"] == "sky"
     assert data["ambience"] == {"enabled": False, "layers": {"rain": 0, "wind": 0, "brown_noise": 0}}

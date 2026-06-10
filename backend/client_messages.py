@@ -51,6 +51,11 @@ class IntentSetGoalCommand(TypedDict):
     goal: str
 
 
+class IntentSetEnabledCommand(TypedDict):
+    type: Literal["intent_set_enabled"]
+    enabled: bool
+
+
 class IntentTaskTextCommand(TypedDict):
     type: Literal["intent_add_task", "intent_update_task"]
     id: str
@@ -102,6 +107,7 @@ ClientCommand: TypeAlias = (
     | MusicSkipCommand
     | LocationCommand
     | IntentSetGoalCommand
+    | IntentSetEnabledCommand
     | IntentTaskTextCommand
     | IntentToggleTaskCommand
     | IntentTaskIdCommand
@@ -145,6 +151,8 @@ def parse_client_message(payload: object) -> ClientCommand | None:
         return _parse_location(payload)
     if message_type == "intent_set_goal":
         return _parse_intent_set_goal(payload)
+    if message_type == "intent_set_enabled":
+        return _parse_intent_set_enabled(payload)
     if message_type == "intent_add_task":
         return _parse_intent_task_text(payload, "intent_add_task")
     if message_type == "intent_update_task":
@@ -219,6 +227,13 @@ def _parse_intent_set_goal(payload: dict[object, object]) -> IntentSetGoalComman
     goal = payload.get("goal")
     if isinstance(goal, str) and len(goal) <= MAX_GOAL_CHARS:
         return {"type": "intent_set_goal", "goal": goal}
+    return None
+
+
+def _parse_intent_set_enabled(payload: dict[object, object]) -> IntentSetEnabledCommand | None:
+    enabled = payload.get("enabled")
+    if type(enabled) is bool:
+        return {"type": "intent_set_enabled", "enabled": enabled}
     return None
 
 

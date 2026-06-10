@@ -215,6 +215,38 @@ body::before {
   justify-content: space-between;
   gap: 0.8rem;
 }
+.intent-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+.intent-body[hidden] {
+  display: none;
+}
+.intent-toggle-btn {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 0.32rem 0.55rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  color: rgba(255,255,255,0.78);
+  background: rgba(255,255,255,0.06);
+  transition: color .3s ease, background .3s ease;
+}
+.intent-toggle-btn:hover {
+  color: hsl(var(--foreground));
+  background: rgba(255,255,255,0.12);
+}
+.intent-panel[data-intent-enabled="false"] {
+  width: min(18rem, calc(100vw - 2rem));
+  gap: 0.45rem;
+}
+.intent-off-note {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: rgba(255,255,255,0.72);
+}
 .intent-goal-text {
   margin: 0;
   font-family: var(--font-display);
@@ -610,6 +642,7 @@ body.day .intent-inline-row input {
 body.day .intent-active-task,
 body.day .intent-mini-btn,
 body.day .intent-clear-btn,
+body.day .intent-toggle-btn,
 body.day .intent-task-action,
 body.day .intent-task-select,
 body.day .checkin-briefing,
@@ -620,6 +653,9 @@ body.day .checkin-text,
 body.day .room-recap {
   color: rgba(15,25,45,0.72);
 }
+body.day .intent-off-note {
+  color: rgba(15,25,45,0.72);
+}
 body.day .intent-inline-row input {
   border-bottom-color: rgba(15,25,45,0.24);
 }
@@ -628,6 +664,7 @@ body.day .intent-inline-row input::placeholder {
 }
 body.day .intent-mini-btn:hover,
 body.day .intent-clear-btn:hover,
+body.day .intent-toggle-btn:hover,
 body.day .intent-task-action:hover,
 body.day .intent-task-select:hover {
   color: rgba(15,25,45,0.98);
@@ -681,10 +718,14 @@ body[data-scene="city"].day .intent-mini-btn,
 body[data-scene="forest"].day .intent-mini-btn,
 body[data-scene="city"].day .intent-clear-btn,
 body[data-scene="forest"].day .intent-clear-btn,
+body[data-scene="city"].day .intent-toggle-btn,
+body[data-scene="forest"].day .intent-toggle-btn,
 body[data-scene="city"].day .intent-task-action,
 body[data-scene="forest"].day .intent-task-action,
 body[data-scene="city"].day .intent-task-select,
 body[data-scene="forest"].day .intent-task-select,
+body[data-scene="city"].day .intent-off-note,
+body[data-scene="forest"].day .intent-off-note,
 body[data-scene="city"].day .room-recap,
 body[data-scene="forest"].day .room-recap {
   color: rgba(255,255,255,0.78);
@@ -854,4 +895,20 @@ body[data-scene="beach"].day {
   #hud-tr         { top: 1.1rem !important; right: 1.1rem !important; }
   #pom-time       { font-size: clamp(4.5rem, 22vw, 7.5rem) !important; }
   .focus-btn      { font-size: 24px !important; padding: 0.9rem 2.2rem 1rem !important; }
+  .intent-panel {
+    top: 4.75rem !important;
+    left: 1rem !important;
+    width: calc(100vw - 2rem) !important;
+    max-height: calc(100vh - 11rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0.75rem;
+  }
+  .intent-panel[data-intent-enabled="false"] {
+    max-height: none;
+    overflow: visible;
+  }
+  .intent-body {
+    gap: 0.55rem;
+  }
 }

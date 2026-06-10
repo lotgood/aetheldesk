@@ -81,7 +81,7 @@ def make_timer_state(
         "sessions_done": sessions_done,
         "music": {"playing": music_playing, "video_id": video_id},
         "time_override": time_override,
-        "intent": {"goal": "", "tasks": [], "active_task_id": None},
+        "intent": {"enabled": True, "goal": "", "tasks": [], "active_task_id": None},
         "checkins": [],
         "scene": "sky",
         "ambience": {"enabled": False, "layers": {"rain": 0, "wind": 0, "brown_noise": 0}},

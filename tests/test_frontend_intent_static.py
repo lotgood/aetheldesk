@@ -17,6 +17,7 @@ def test_room_intent_ui_is_korean_primary_accessible_and_module_owned():
 
     assert 'id="intent-panel"' in room
     assert 'id="intent-goal-input"' in room
+    assert 'id="intent-toggle"' in room
     assert 'id="intent-task-input"' in room
     assert 'id="intent-task-list"' in room
     assert 'id="intent-status"' in room and 'aria-live="polite"' in room
@@ -28,5 +29,6 @@ def test_room_intent_ui_is_korean_primary_accessible_and_module_owned():
     assert ".innerHTML" not in intent_source
     assert "intent_add_task" in intent_source
     assert "intent_set_goal" in intent_source
+    assert "intent_set_enabled" in intent_source
     assert "body.day .intent-goal-text" in room_css
     assert 'body[data-scene="city"].day .intent-goal-text' in room_css

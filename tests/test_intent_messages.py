@@ -8,6 +8,7 @@ from backend import main as backend_main
 
 VALID_INTENT_MESSAGES: tuple[dict[str, object], ...] = (
     {"type": "intent_set_goal", "goal": "오늘 집중 목표"},
+    {"type": "intent_set_enabled", "enabled": False},
     {"type": "intent_add_task", "id": "task_001", "text": "보고서 정리"},
     {"type": "intent_update_task", "id": "task_001", "text": "보고서 초안 정리"},
     {"type": "intent_toggle_task", "id": "task_001", "done": True},
@@ -20,6 +21,7 @@ VALID_INTENT_MESSAGES: tuple[dict[str, object], ...] = (
 
 INVALID_INTENT_MESSAGES: tuple[dict[str, object], ...] = (
     {"type": "intent_set_goal", "goal": "x" * 121},
+    {"type": "intent_set_enabled", "enabled": "no"},
     {"type": "intent_add_task", "id": "short", "text": "보고서"},
     {"type": "intent_add_task", "id": "task_001", "text": ""},
     {"type": "intent_add_task", "id": "task_001", "text": "x" * 81},
@@ -49,6 +51,7 @@ def test_service_handle_applies_intent_commands_and_bounds_task_list():
 
     async def run() -> None:
         await backend_main.handle(state, {"type": "intent_set_goal", "goal": "문서 정리"})
+        await backend_main.handle(state, {"type": "intent_set_enabled", "enabled": False})
         for index in range(1, 10):
             await backend_main.handle(
                 state,
@@ -62,6 +65,7 @@ def test_service_handle_applies_intent_commands_and_bounds_task_list():
     asyncio.run(run())
 
     assert state["intent"]["goal"] == "문서 정리"
+    assert state["intent"]["enabled"] is False
     assert len(state["intent"]["tasks"]) == 7
     assert state["intent"]["active_task_id"] is None
     assert all(task["id"] != "task_003" for task in state["intent"]["tasks"])

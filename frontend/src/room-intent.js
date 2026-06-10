@@ -1,4 +1,4 @@
-import { byId } from "./dom.js";
+import { byId, setHiddenInteraction } from "./dom.js";
 
 const MAX_TASKS = 8;
 
@@ -19,6 +19,10 @@ function taskById(tasks, id) {
 
 
 export function createRoomIntentController({ getState, send }) {
+  const panel = byId("intent-panel");
+  const toggle = byId("intent-toggle");
+  const body = byId("intent-body");
+  const offNote = byId("intent-off-note");
   const goalInput = byId("intent-goal-input");
   const goalText = byId("intent-goal-text");
   const goalSave = byId("intent-goal-save");
@@ -31,7 +35,7 @@ export function createRoomIntentController({ getState, send }) {
   let lastActiveTaskId = null;
 
   function currentIntent() {
-    return getState()?.intent || { goal: "", tasks: [], active_task_id: null };
+    return getState()?.intent || { enabled: true, goal: "", tasks: [], active_task_id: null };
   }
 
   function setStatus(message) {
@@ -41,6 +45,11 @@ export function createRoomIntentController({ getState, send }) {
   function saveGoal() {
     send({ type: "intent_set_goal", goal: goalInput.value.trim() });
     setStatus("방 목표를 저장했습니다.");
+  }
+
+  function setEnabled(nextEnabled) {
+    send({ type: "intent_set_enabled", enabled: nextEnabled });
+    setStatus(nextEnabled ? "방 목표를 켰습니다." : "방 목표를 껐습니다.");
   }
 
   function addTask() {
@@ -60,7 +69,14 @@ export function createRoomIntentController({ getState, send }) {
   }
 
   function renderIntent(intent) {
+    const enabled = intent.enabled !== false;
     const active = taskById(intent.tasks, intent.active_task_id);
+    panel.dataset.intentEnabled = String(enabled);
+    toggle.textContent = enabled ? "끄기" : "켜기";
+    toggle.setAttribute("aria-expanded", enabled ? "true" : "false");
+    offNote.hidden = enabled;
+    body.hidden = !enabled;
+    setHiddenInteraction(body, !enabled);
     goalText.textContent = intent.goal || "목표를 정해 주세요.";
     if (document.activeElement !== goalInput) goalInput.value = intent.goal;
     activeTask.textContent = active ? `선택한 작업 · ${active.text}` : "선택한 작업 없음";
@@ -110,6 +126,9 @@ export function createRoomIntentController({ getState, send }) {
   }
 
   goalSave.addEventListener("click", saveGoal);
+  toggle.addEventListener("click", () => {
+    setEnabled(currentIntent().enabled === false);
+  });
   goalInput.addEventListener("keydown", event => {
     if (event.key === "Enter") saveGoal();
   });

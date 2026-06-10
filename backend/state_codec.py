@@ -10,7 +10,8 @@ except ModuleNotFoundError:
 
 
 MUSIC_STATE_KEYS = frozenset(MusicState.__annotations__.keys())
-INTENT_KEYS = frozenset({"goal", "tasks", "active_task_id"})
+LEGACY_INTENT_KEYS = frozenset({"goal", "tasks", "active_task_id"})
+INTENT_KEYS = frozenset({"enabled", "goal", "tasks", "active_task_id"})
 TASK_KEYS = frozenset({"id", "text", "done"})
 CHECKIN_KEYS = frozenset({"id", "kind", "text"})
 AMBIENCE_KEYS = frozenset({"enabled", "layers"})
@@ -87,7 +88,12 @@ def _valid_music(value: object) -> bool:
 def _valid_intent(value: object) -> bool:
     if not isinstance(value, dict):
         return False
-    if set(value.keys()) != INTENT_KEYS:
+    keys = set(value.keys())
+    if keys == LEGACY_INTENT_KEYS:
+        value["enabled"] = True
+    elif keys != INTENT_KEYS:
+        return False
+    if type(value.get("enabled")) is not bool:
         return False
     goal = value.get("goal")
     tasks = value.get("tasks")
