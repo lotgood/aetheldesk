@@ -11,3 +11,4 @@ def test_runtime_module_feeds_main_compatibility_exports():
     assert backend_main.local_token_hashes is backend_runtime.local_token_hashes
     assert backend_main.local_room_instance_ids is backend_runtime.local_room_instance_ids
     assert backend_main.worker_id == backend_runtime.worker_id
+    assert backend_main.config is backend_runtime.config

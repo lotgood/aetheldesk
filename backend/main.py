@@ -50,6 +50,7 @@ tick = cast(Any, _scheduler_wiring_module.tick)
 websocket_router = cast(Any, _websocket_handler_module.router)
 
 
+config = runtime_state.config
 Room = runtime_state.Room
 get_celestial_state = runtime_state.get_celestial_state
 logger = runtime_state.logger
