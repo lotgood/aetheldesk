@@ -28,23 +28,23 @@ def get_celestial_state(dt: datetime | None = None, lat: float | None = None, lo
     s = sun(loc.observer, date=local_date, tzinfo=tz)
 
     sunrise_ts = s["sunrise"].timestamp()
-    sunset_ts  = s["sunset"].timestamp()
-    arc_pct    = max(0.0, min(1.0, (dt.timestamp() - sunrise_ts) / max(sunset_ts - sunrise_ts, 1)))
+    sunset_ts = s["sunset"].timestamp()
+    arc_pct = max(0.0, min(1.0, (dt.timestamp() - sunrise_ts) / max(sunset_ts - sunrise_ts, 1)))
 
     if elev > 45:
-        gradient = ["#82CFFF", "#5BADE8"]    # deep midday blue
+        gradient = ["#82CFFF", "#5BADE8"]  # deep midday blue
     elif elev > 20:
-        gradient = ["#B8DFFF", "#7ABFDC"]    # clear sky blue
+        gradient = ["#B8DFFF", "#7ABFDC"]  # clear sky blue
     elif elev > 5:
-        gradient = ["#FFD080", "#FFA040"]    # warm morning / afternoon
+        gradient = ["#FFD080", "#FFA040"]  # warm morning / afternoon
     elif elev > 0:
-        gradient = ["#FFB347", "#FF6B35"]    # golden hour
+        gradient = ["#FFB347", "#FF6B35"]  # golden hour
     elif elev > -6:
-        gradient = ["#2C1654", "#FF6B35"]    # civil twilight
+        gradient = ["#2C1654", "#FF6B35"]  # civil twilight
     elif elev > -12:
-        gradient = ["#1A0A2E", "#2C1654"]    # nautical twilight
+        gradient = ["#1A0A2E", "#2C1654"]  # nautical twilight
     else:
-        gradient = ["#0A0A14", "#1A0A2E"]    # night
+        gradient = ["#0A0A14", "#1A0A2E"]  # night
 
     return {
         "elevation": round(elev, 2),

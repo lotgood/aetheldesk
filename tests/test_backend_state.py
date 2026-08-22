@@ -401,7 +401,7 @@ def test_routes_serve_lobby_room_and_static_assets():
 
         room = client.get("/room/ABCD")
         assert room.status_code == 200
-        assert "id=\"room-label\"" in room.text
+        assert 'id="room-label"' in room.text
 
         static_js = client.get("/app.js")
         assert static_js.status_code == 200

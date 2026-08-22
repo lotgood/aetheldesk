@@ -8,21 +8,12 @@ from typing import Any
 
 from fastapi import HTTPException, Request, WebSocket, WebSocketDisconnect
 
-try:
-    from backend import auth, config
-    from backend import state as state_reducer
-    from backend.event_bus import RedisStateEventBus
-    from backend.redis_contract import is_valid_room_id, normalize_room_id
-    from backend.room_store import RedisUnavailable, RoomLimitReached, create_redis_store
-    from backend.state import BackendState
-except ModuleNotFoundError:
-    import auth
-    import config
-    import state as state_reducer
-    from event_bus import RedisStateEventBus
-    from redis_contract import is_valid_room_id, normalize_room_id
-    from room_store import RedisUnavailable, RoomLimitReached, create_redis_store
-    from state import BackendState
+from backend import auth, config
+from backend import state as state_reducer
+from backend.event_bus import RedisStateEventBus
+from backend.redis_contract import is_valid_room_id, normalize_room_id
+from backend.room_store import RedisUnavailable, RoomLimitReached, create_redis_store
+from backend.state import BackendState
 
 
 PIN_MIN_LENGTH = 4
@@ -31,10 +22,7 @@ ROOM_INSTANCE_ID_KEY = "room_instance_id"
 
 
 def _runtime() -> Any:
-    try:
-        return import_module("backend.main")
-    except ModuleNotFoundError:
-        return import_module("main")
+    return import_module("backend.main")
 
 
 def _generated_room_id() -> str:

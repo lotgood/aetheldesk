@@ -10,10 +10,7 @@ class GetCelestialState(Protocol):
     ) -> dict[str, object]: ...
 
 
-try:
-    _celestial_module = import_module("celestial")
-except ModuleNotFoundError:
-    _celestial_module = import_module("backend.celestial")
+_celestial_module = import_module("backend.celestial")
 
 get_celestial_state = cast(GetCelestialState, _celestial_module.get_celestial_state)
 

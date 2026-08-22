@@ -150,7 +150,9 @@ def test_missing_and_invalid_token_close_uniformly_without_room_leak(websocket_c
         assert closed.value.reason == backend_main.WS_AUTH_CLOSE_REASON
 
 
-def test_inbound_message_updates_redis_and_publishes_full_state_snapshot(websocket_client: tuple[TestClient, FakeRedis]):
+def test_inbound_message_updates_redis_and_publishes_full_state_snapshot(
+    websocket_client: tuple[TestClient, FakeRedis],
+):
     client, redis = websocket_client
     token = create_room(client, "SYNC")
 

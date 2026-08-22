@@ -1,24 +1,13 @@
-from fastapi import APIRouter, HTTPException, Request
 from importlib import import_module
-from pydantic import BaseModel, Field
 from typing import Any, cast
 
-try:
-    from backend import auth
-    from backend.room_store import RedisUnavailable, RoomAlreadyExists, RoomLimitReached
-except ModuleNotFoundError:
-    import auth
-    from room_store import RedisUnavailable, RoomAlreadyExists, RoomLimitReached
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field
 
+from backend import auth
+from backend.room_store import RedisUnavailable, RoomAlreadyExists, RoomLimitReached
 
-def _backend_module(name: str) -> Any:
-    try:
-        return import_module(f"backend.{name}")
-    except ModuleNotFoundError:
-        return import_module(name)
-
-
-_room_service = _backend_module("room_service")
+_room_service = import_module("backend.room_service")
 PIN_MAX_LENGTH = cast(int, _room_service.PIN_MAX_LENGTH)
 PIN_MIN_LENGTH = cast(int, _room_service.PIN_MIN_LENGTH)
 ROOM_INSTANCE_ID_KEY = cast(str, _room_service.ROOM_INSTANCE_ID_KEY)

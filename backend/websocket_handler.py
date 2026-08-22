@@ -5,22 +5,10 @@ from typing import Any, cast
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-try:
-    from backend.redis_contract import is_valid_room_id, normalize_room_id
-    from backend.room_store import RedisUnavailable
-except ModuleNotFoundError:
-    from redis_contract import is_valid_room_id, normalize_room_id
-    from room_store import RedisUnavailable
+from backend.redis_contract import is_valid_room_id, normalize_room_id
+from backend.room_store import RedisUnavailable
 
-
-def _backend_module(name: str) -> Any:
-    try:
-        return import_module(f"backend.{name}")
-    except ModuleNotFoundError:
-        return import_module(name)
-
-
-_room_service = _backend_module("room_service")
+_room_service = import_module("backend.room_service")
 _runtime = cast(Any, _room_service._runtime)
 _token_authorizes_room = cast(Any, _room_service._token_authorizes_room)
 ensure_room_events = cast(Any, _room_service.ensure_room_events)

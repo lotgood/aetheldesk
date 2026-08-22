@@ -1,13 +1,9 @@
 import json
 from collections.abc import Iterable
-from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-try:
-    from backend.redis_contract import normalize_room_id
-except ModuleNotFoundError:
-    from redis_contract import normalize_room_id
+from backend.redis_contract import normalize_room_id
 
 
 class LocalConnectionManager:
@@ -58,7 +54,9 @@ class LocalConnectionManager:
             self.disconnect(normalized, websocket)
 
     def local_payloads(self) -> dict[str, list[str]]:
-        return {room_id: [type(socket).__name__ for socket in sockets] for room_id, sockets in self._connections.items()}
+        return {
+            room_id: [type(socket).__name__ for socket in sockets] for room_id, sockets in self._connections.items()
+        }
 
 
 def contains_live_websocket(value: object) -> bool:

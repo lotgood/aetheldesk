@@ -4,11 +4,7 @@ import hmac
 import secrets
 from dataclasses import dataclass
 
-try:
-    from backend import config
-except ModuleNotFoundError:
-    import config
-
+from backend import config
 
 PIN_HASH_ITERATIONS = 200_000
 PIN_SALT_BYTES = 16

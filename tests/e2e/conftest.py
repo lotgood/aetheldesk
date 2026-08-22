@@ -35,7 +35,6 @@ def _wait_for_server(url: str, timeout_seconds: float = 20.0) -> None:
 @pytest.fixture(scope="session")
 def live_server() -> Iterator[str]:
     repo_root = Path(__file__).resolve().parents[2]
-    backend_dir = repo_root / "backend"
     port = _find_free_port()
     base_url = f"http://127.0.0.1:{port}"
 
@@ -49,7 +48,7 @@ def live_server() -> Iterator[str]:
             "python",
             "-m",
             "uvicorn",
-            "main:app",
+            "backend.main:app",
             "--host",
             "127.0.0.1",
             "--port",
@@ -57,7 +56,7 @@ def live_server() -> Iterator[str]:
             "--log-level",
             "warning",
         ],
-        cwd=backend_dir,
+        cwd=repo_root,
         env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

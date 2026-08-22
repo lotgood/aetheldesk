@@ -5,32 +5,18 @@ from datetime import datetime, timezone
 from importlib import import_module
 from typing import Any, Protocol, TypeVar, cast
 
-try:
-    from backend import config
-    from backend import redis_contract
-    from backend.redis_contract import (
-        normalize_room_id,
-        room_metadata_key,
-        room_pin_attempts_key,
-        room_pin_block_key,
-        room_tick_lock_key,
-        room_state_key,
-        room_token_key,
-    )
-    from backend.state import BackendState
-except ModuleNotFoundError:
-    import config
-    import redis_contract
-    from redis_contract import (
-        normalize_room_id,
-        room_metadata_key,
-        room_pin_attempts_key,
-        room_pin_block_key,
-        room_tick_lock_key,
-        room_state_key,
-        room_token_key,
-    )
-    from state import BackendState
+from backend import config
+from backend import redis_contract
+from backend.redis_contract import (
+    normalize_room_id,
+    room_metadata_key,
+    room_pin_attempts_key,
+    room_pin_block_key,
+    room_tick_lock_key,
+    room_state_key,
+    room_token_key,
+)
+from backend.state import BackendState
 
 
 ROOM_INDEX_KEY = f"{redis_contract.KEY_PREFIX}:rooms"
@@ -213,7 +199,9 @@ class RoomStore:
 
     async def set_token_lookup(self, room_id: str, token_hash: str) -> None:
         normalized = normalize_room_id(room_id)
-        await _redis_call(lambda: self.redis.set(room_token_key(normalized, token_hash), normalized, ex=self.ttl_seconds))
+        await _redis_call(
+            lambda: self.redis.set(room_token_key(normalized, token_hash), normalized, ex=self.ttl_seconds)
+        )
 
     async def get_token_room_id(self, room_id: str, token_hash: str) -> str | None:
         return _decode_text(await _redis_call(lambda: self.redis.get(room_token_key(room_id, token_hash))))
@@ -245,9 +233,13 @@ class RoomStore:
             return True
         return False
 
-    async def acquire_tick_lock(self, room_id: str, owner: str, ttl_seconds: int = config.ROOM_TICK_LOCK_SECONDS) -> bool:
+    async def acquire_tick_lock(
+        self, room_id: str, owner: str, ttl_seconds: int = config.ROOM_TICK_LOCK_SECONDS
+    ) -> bool:
         normalized = normalize_room_id(room_id)
-        acquired = await _redis_call(lambda: self.redis.set(room_tick_lock_key(normalized), owner, ex=ttl_seconds, nx=True))
+        acquired = await _redis_call(
+            lambda: self.redis.set(room_tick_lock_key(normalized), owner, ex=ttl_seconds, nx=True)
+        )
         return bool(acquired)
 
     def _default_metadata(self, room_id: str) -> dict[str, object]:

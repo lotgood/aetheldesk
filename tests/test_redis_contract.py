@@ -11,18 +11,9 @@ def test_room_key_and_channel_builders_normalize_room_ids_to_uppercase():
 
     assert redis_contract.room_state_key(room_id) == "aetheldesk:room:ROOM-ABC:state"
     assert redis_contract.room_metadata_key(room_id) == "aetheldesk:room:ROOM-ABC:meta"
-    assert (
-        redis_contract.room_token_key(room_id, "hash123")
-        == "aetheldesk:room:ROOM-ABC:token:hash123"
-    )
-    assert (
-        redis_contract.room_pin_attempts_key(room_id, "fp123")
-        == "aetheldesk:room:ROOM-ABC:pin-attempts:fp123"
-    )
-    assert (
-        redis_contract.room_pin_block_key(room_id, "fp123")
-        == "aetheldesk:room:ROOM-ABC:pin-block:fp123"
-    )
+    assert redis_contract.room_token_key(room_id, "hash123") == "aetheldesk:room:ROOM-ABC:token:hash123"
+    assert redis_contract.room_pin_attempts_key(room_id, "fp123") == "aetheldesk:room:ROOM-ABC:pin-attempts:fp123"
+    assert redis_contract.room_pin_block_key(room_id, "fp123") == "aetheldesk:room:ROOM-ABC:pin-block:fp123"
     assert redis_contract.room_tick_lock_key(room_id) == "aetheldesk:room:ROOM-ABC:tick-lock"
     assert redis_contract.room_events_channel(room_id) == "aetheldesk:room:ROOM-ABC:events"
 

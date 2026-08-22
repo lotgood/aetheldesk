@@ -5,15 +5,7 @@ from typing import Any, cast
 from fastapi import APIRouter
 from fastapi.responses import FileResponse
 
-
-def _backend_module(name: str) -> Any:
-    try:
-        return import_module(f"backend.{name}")
-    except ModuleNotFoundError:
-        return import_module(name)
-
-
-_runtime = cast(Any, _backend_module("room_service")._runtime)
+_runtime = cast(Any, import_module("backend.room_service")._runtime)
 
 
 router = APIRouter()

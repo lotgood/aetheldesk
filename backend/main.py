@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import os
-import sys
 from datetime import datetime
 from importlib import import_module
 from typing import Any, Protocol, TypedDict, cast
@@ -9,23 +8,13 @@ from typing import Any, Protocol, TypedDict, cast
 from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
 
-sys.path.insert(0, os.path.dirname(__file__))
-
-try:
-    from backend import config
-    from backend.connection_manager import LocalConnectionManager
-    from backend.state import BackendState, MusicState, _parse_iso, advance_timer_state
-except ModuleNotFoundError:
-    import config
-    from connection_manager import LocalConnectionManager
-    from state import BackendState, MusicState, _parse_iso, advance_timer_state
+from backend import config
+from backend.connection_manager import LocalConnectionManager
+from backend.state import BackendState, MusicState, _parse_iso, advance_timer_state
 
 
 def _backend_module(name: str) -> Any:
-    try:
-        return import_module(f"backend.{name}")
-    except ModuleNotFoundError:
-        return import_module(name)
+    return import_module(f"backend.{name}")
 
 
 _lifespan_module = _backend_module("app_lifespan")
@@ -59,7 +48,7 @@ class GetCelestialState(Protocol):
     ) -> dict[str, object]: ...
 
 
-get_celestial_state = cast(GetCelestialState, import_module("celestial").get_celestial_state)
+get_celestial_state = cast(GetCelestialState, import_module("backend.celestial").get_celestial_state)
 
 logger = logging.getLogger("aetheldesk")
 
@@ -91,6 +80,13 @@ local_token_hashes: dict[str, set[str]] = {}
 local_room_instance_ids: dict[str, str] = {}
 worker_id = config.get_worker_identity()
 
+__all__ = [
+    "BackendState",
+    "MusicState",
+    "_parse_iso",
+    "advance_timer_state",
+]
+
 
 class CacheControlledStaticFiles(StaticFiles):
     def __init__(self, *args: Any, cache_control: str, **kwargs: Any) -> None:
@@ -102,6 +98,7 @@ class CacheControlledStaticFiles(StaticFiles):
         if response.status_code == 200:
             response.headers["Cache-Control"] = self._cache_control
         return response
+
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(frontend_router)

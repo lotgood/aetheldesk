@@ -43,28 +43,10 @@ select = ["E", "F"]
 ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
-"backend/connection_manager.py" = ["F401"]
-"backend/main.py" = ["F401"]
 "tests/test_websocket_redis.py" = ["F401"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["backend", "tests"]
-
-[tool.ruff.format]
-exclude = [
-    "backend/celestial.py",
-    "backend/config.py",
-    "backend/connection_manager.py",
-    "backend/event_bus.py",
-    "backend/main.py",
-    "backend/room_store.py",
-    "tests/e2e/test_room_sync.py",
-    "tests/test_backend_state.py",
-    "tests/test_connection_manager.py",
-    "tests/test_frontend_static.py",
-    "tests/test_redis_contract.py",
-    "tests/test_websocket_redis.py",
-]
 
 [tool.pyright]
 pythonVersion = "3.12"

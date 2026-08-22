@@ -28,8 +28,7 @@ def get_secret_key() -> str:
     if is_test_mode():
         return TEST_SECRET_KEY
     raise RuntimeError(
-        "AETHELDESK_SECRET_KEY is required outside pytest/test mode "
-        "(set it in production/docker environments)."
+        "AETHELDESK_SECRET_KEY is required outside pytest/test mode (set it in production/docker environments)."
     )
 
 

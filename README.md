@@ -61,7 +61,7 @@ Run commands from the repository root unless a row says otherwise.
 | `curl -fsS http://127.0.0.1:${APP_PORT:-8000}/health` | Check app health. | Returns success when Redis is required and reachable. |
 | `docker compose exec redis redis-cli CONFIG GET appendonly appendfsync` | Confirm Redis AOF policy. | Reports `appendonly yes` and `appendfsync everysec`. |
 
-Docker Compose verification is currently blocked in this execution environment because `docker` is not installed. Task 11 implementation is committed, but local Compose health evidence must not be treated as passing here. The blocker is recorded in `.omo/evidence/task-11-docker-health.txt`.
+If this host does not have `docker`, do not treat local Compose health as passed. CI still runs `docker compose up --build --detach` and `/health` in the Playwright e2e job.
 
 ## Local Setup
 
@@ -108,7 +108,9 @@ Build production assets with:
 npm run build
 ```
 
-The build writes to `frontend/dist`. FastAPI serves hashed assets from `frontend/dist/assets` when present. Do not commit generated `frontend/dist` unless a release process explicitly asks for it.
+`npm run build` first compiles the local Tailwind stylesheet (`npm run build:css` → `frontend/tailwind.css`) and then runs Vite. The build writes to `frontend/dist`. FastAPI serves hashed assets from `frontend/dist/assets` when present. Do not commit generated `frontend/dist` unless a release process explicitly asks for it.
+
+The frontend is fully self-contained: Tailwind is compiled locally and the Inter/Instrument Serif fonts are self-hosted under `frontend/fonts/` (via `frontend/fonts.css`), so the app works offline. The YouTube iframe API remains the only external request.
 
 ## Docker Self-Host Setup
 

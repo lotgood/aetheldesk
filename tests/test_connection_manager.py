@@ -42,9 +42,7 @@ def test_broadcast_json_sends_to_local_sockets_only_and_removes_dead_sockets():
 
     asyncio.run(run())
 
-    assert [json.loads(message) for message in live.messages] == [
-        {"type": "state", "data": {"focus": True}}
-    ]
+    assert [json.loads(message) for message in live.messages] == [{"type": "state", "data": {"focus": True}}]
     assert manager.connections_for("room-a") == frozenset({cast(WebSocket, live)})
 
 

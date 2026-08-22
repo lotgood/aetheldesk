@@ -1,14 +1,9 @@
 from collections.abc import Callable
 from typing import Protocol
 
-try:
-    from backend import config
-    from backend.connection_manager import LocalConnectionManager
-    from backend.state import BackendState, advance_timer_state
-except ModuleNotFoundError:
-    import config
-    from connection_manager import LocalConnectionManager
-    from state import BackendState, advance_timer_state
+from backend import config
+from backend.connection_manager import LocalConnectionManager
+from backend.state import BackendState, advance_timer_state
 
 
 class RoomStoreLike(Protocol):

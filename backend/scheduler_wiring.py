@@ -2,22 +2,10 @@ import asyncio
 from importlib import import_module
 from typing import Any, cast
 
-try:
-    from backend.scheduler import RoomTickScheduler
-    from backend.state import advance_timer_state
-except ModuleNotFoundError:
-    from scheduler import RoomTickScheduler
-    from state import advance_timer_state
+from backend.scheduler import RoomTickScheduler
+from backend.state import advance_timer_state
 
-
-def _backend_module(name: str) -> Any:
-    try:
-        return import_module(f"backend.{name}")
-    except ModuleNotFoundError:
-        return import_module(name)
-
-
-_room_service = _backend_module("room_service")
+_room_service = import_module("backend.room_service")
 _runtime = cast(Any, _room_service._runtime)
 broadcast = cast(Any, _room_service.broadcast)
 
