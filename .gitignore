@@ -20,3 +20,9 @@ frontend/dist/
 # OS/editor noise
 .DS_Store
 *.swp
+
+# Local dev artifacts
+.gjc/
+artifacts/
+*.log
+dump.rdb
