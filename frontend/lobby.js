@@ -11,7 +11,11 @@ async function createRoom() {
   const requestedRoomId = document.getElementById("room-input").value.trim().toUpperCase();
   const roomId = requestedRoomId || randCode();
   const pin = readPin();
-  if (!pin) { document.getElementById("pin-input").focus(); return; }
+  if (!pin) {
+    showLobbyError("PIN을 입력해 주세요");
+    document.getElementById("pin-input").focus();
+    return;
+  }
   showLobbyError("");
   try {
     const response = await fetch("/api/rooms", {
@@ -34,8 +38,16 @@ async function createRoom() {
 async function joinRoom() {
   const roomId = document.getElementById("room-input").value.trim().toUpperCase();
   const pin = readPin();
-  if (!roomId) { document.getElementById("room-input").focus(); return; }
-  if (!pin) { document.getElementById("pin-input").focus(); return; }
+  if (!roomId) {
+    showLobbyError("방 코드를 입력해 주세요");
+    document.getElementById("room-input").focus();
+    return;
+  }
+  if (!pin) {
+    showLobbyError("PIN을 입력해 주세요");
+    document.getElementById("pin-input").focus();
+    return;
+  }
   showLobbyError("");
   try {
     const response = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/join`, {

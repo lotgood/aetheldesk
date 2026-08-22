@@ -5,10 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "vite build",
+    "build:css": "tailwindcss -i frontend/tailwind.input.css -o frontend/tailwind.css --content 'frontend/*.html' --minify",
+    "build": "npm run build:css && vite build",
     "preview": "vite preview --host 0.0.0.0"
   },
   "devDependencies": {
+    "tailwindcss": "^3.4.19",
     "vite": "^6.4.3"
+  },
+  "dependencies": {
+    "three": "^0.185.1"
   }
 }

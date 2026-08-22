@@ -37,3 +37,28 @@ export function readScene(defaultScene = "sky") {
 export function storeScene(name) {
   localStorage.setItem(SCENE_STORAGE_KEY, name);
 }
+
+export const DISPLAY_QUALITY_STORAGE_KEY = "display-quality";
+export const DISPLAY_FX_STORAGE_KEY = "display-fx";
+
+export function readDisplayQuality() {
+  return localStorage.getItem(DISPLAY_QUALITY_STORAGE_KEY) || "auto";
+}
+
+export function storeDisplayQuality(name) {
+  localStorage.setItem(DISPLAY_QUALITY_STORAGE_KEY, name);
+}
+
+export function readDisplayFX() {
+  try {
+    const value = JSON.parse(localStorage.getItem(DISPLAY_FX_STORAGE_KEY) || "null");
+    return value && typeof value === "object" ? value : null;
+  } catch {
+    localStorage.removeItem(DISPLAY_FX_STORAGE_KEY);
+    return null;
+  }
+}
+
+export function storeDisplayFX(fx) {
+  localStorage.setItem(DISPLAY_FX_STORAGE_KEY, JSON.stringify(fx));
+}

@@ -19,6 +19,11 @@ export function createTimerControls({ getState, send }) {
     const label = fmtSliderMinutes(Number(value));
     timeValue.textContent = label;
     timeSlider.setAttribute("aria-valuetext", label);
+    // Day (06:00–17:59) shows the sun; the rest shows the moon
+    const hours = Number(value) / 60;
+    const isDay = hours >= 6 && hours < 18;
+    byId("icon-sun").classList.toggle("hidden", !isDay);
+    byId("icon-moon").classList.toggle("hidden", isDay);
   }
 
   function focusWhenShown(rowId, controlId, attempts = 40) {
@@ -102,6 +107,14 @@ export function createTimerControls({ getState, send }) {
   byId("btn-pause-timer").addEventListener("click", () => send({ type: "focus_pause" }));
   byId("btn-cancel-timer").addEventListener("click", () => send({ type: "focus_cancel" }));
   byId("btn-skip-break").addEventListener("click", () => send({ type: "skip_break" }));
+  byId("pomodoro").addEventListener("click", event => {
+    if (event.target.closest("#btn-pause-timer, #btn-cancel-timer, #btn-skip-break")) return;
+    if (!event.target.closest("#pom-time")) return;
+    const state = getState();
+    if (!state) return;
+    if (state.focus) send({ type: "focus_pause" });
+    else if (state.break) send({ type: "skip_break" });
+  });
   updateSliderText(timeSlider.value);
 
   return { syncSlider, updateDurChips };

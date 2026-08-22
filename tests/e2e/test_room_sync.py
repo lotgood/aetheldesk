@@ -90,7 +90,9 @@ def test_two_client_sync_reload_reconnect_and_scene(browser: Browser, live_serve
     page_a.locator("#btn-skip").click(force=True)
     page_b.wait_for_function("() => parseFloat(getComputedStyle(document.getElementById('conn-dot')).opacity) > 0")
 
-    page_a.evaluate("() => { const slider = document.getElementById('time-slider'); slider.value = '555'; slider.dispatchEvent(new Event('input', { bubbles: true })); }")
+    page_a.evaluate(
+        "() => { const slider = document.getElementById('time-slider'); slider.value = '555'; slider.dispatchEvent(new Event('input', { bubbles: true })); }"
+    )
     expect(page_b.locator("#time-slider")).to_have_value("555")
     page_a.locator("#btn-reset-time").click(force=True)
     page_b.wait_for_function("() => document.getElementById('time-slider').value !== '555'")
@@ -130,3 +132,24 @@ def test_two_client_sync_reload_reconnect_and_scene(browser: Browser, live_serve
 
     context_a.close()
     context_b.close()
+
+
+@pytest.mark.e2e
+def test_focus_pause_timer_stays_clickable(browser: Browser, live_server: str) -> None:
+    room_id = _room_id("E2EPAUSE")
+    context = browser.new_context()
+    page = context.new_page()
+    _create_via_lobby(page, live_server, room_id, "2468")
+    expect(page.locator("#focus-btn")).to_be_visible()
+    page.wait_for_function("() => parseFloat(getComputedStyle(document.getElementById('conn-dot')).opacity) > 0")
+    page.locator("#focus-btn").click()
+    pause = page.locator("#btn-pause-timer")
+    expect(pause).to_be_visible()
+    expect(pause).to_have_text("일시정지")
+    pause.click()
+    expect(pause).to_have_text("재개")
+    expect(page.locator("#timer-status")).to_contain_text("일시정지")
+    evidence = Path(__file__).resolve().parents[2] / "artifacts" / "hardening"
+    evidence.mkdir(parents=True, exist_ok=True)
+    page.screenshot(path=str(evidence / "pause-e2e.png"), full_page=True)
+    context.close()

@@ -1,0 +1,145 @@
+/* ──────────────────────────────────────────────────────────────
+   Velorah — shared design system layer for AethelDesk.
+   Both pages (lobby + room) consume this file; page-specific
+   styles (day-mode grades, layout) stay in each HTML head.
+   Tokens: pure-black base, Instrument Serif display, Inter body,
+   liquid glass with gradient-edge borders, two radius steps.
+   ────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Color tokens (HSL fragments). */
+  --foreground:         0 0% 100%;
+  --primary:            0 0% 100%;
+  --primary-foreground: 0 0% 4%;
+  --muted-foreground:   240 4% 66%;
+  --ring:               0 0% 100%;
+  /* Day-mode ink: dark navy legible over bright sky. */
+  --day-ink:            rgba(15, 25, 45, 0.88);
+
+  /* Radius scale — two deliberate steps, no ad-hoc values.
+     pill  = single-row controls (chips, bars, buttons)
+     panel = multi-row surfaces (time dial, PIN card, dialogs) */
+  --radius-pill:  999px;
+  --radius-panel: 1.5rem;
+  --radius:       var(--radius-panel);
+
+  --font-display: 'Instrument Serif', 'Times New Roman', 'AppleMyungjo', serif;
+  --font-body:    'Inter', system-ui, sans-serif;
+
+  --ease:      cubic-bezier(.32,.72,.32,1);
+  --ease-slow: cubic-bezier(.5,.05,.2,1);
+
+  /* Tracking scale. Hangul must never take Latin display tracking:
+     wide letter-spacing scatters syllable blocks into fragments.
+     latin  = uppercase Latin micro-labels only
+     hangul = Korean labels and controls */
+  --track-latin:  0.22em;
+  --track-hangul: 0.08em;
+}
+
+.font-display { font-family: var(--font-display); font-weight: 400; }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 5px;
+  border-radius: var(--radius-pill);
+}
+
+/* ── Liquid glass ─────────────────────────────────────────────
+   Mild blur, ~1% white tint, gradient-border drawn with mask-xor. */
+.liquid-glass {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.01);
+  background-blend-mode: luminosity;
+  backdrop-filter: blur(4px) saturate(140%);
+  -webkit-backdrop-filter: blur(4px) saturate(140%);
+  border: none;
+  box-shadow:
+    inset 0 1px 1px rgba(255,255,255,0.10),
+    0 20px 60px -30px rgba(0,0,0,0.7);
+}
+.liquid-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1.4px;
+  border-radius: inherit;
+  background: linear-gradient(180deg,
+    rgba(255,255,255,0.45) 0%,
+    rgba(255,255,255,0.15) 20%,
+    rgba(255,255,255,0)    40%,
+    rgba(255,255,255,0)    60%,
+    rgba(255,255,255,0.15) 80%,
+    rgba(255,255,255,0.45) 100%);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  pointer-events: none;
+}
+/* Stronger edge highlight on hover — the glass "lights up". */
+.liquid-glass.interactive { transition: transform .6s var(--ease); }
+.liquid-glass.interactive:hover::before {
+  background: linear-gradient(180deg,
+    rgba(255,255,255,0.65) 0%,
+    rgba(255,255,255,0.22) 20%,
+    rgba(255,255,255,0.04) 40%,
+    rgba(255,255,255,0.04) 60%,
+    rgba(255,255,255,0.22) 80%,
+    rgba(255,255,255,0.65) 100%);
+  transition: background .6s var(--ease);
+}
+
+/* ── Typography helpers ─────────────────────────────────────── */
+
+/* Tiny labels — Inter, tracked uppercase, muted. Korean-safe tracking. */
+.ui-label {
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: var(--track-hangul);
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+
+/* Numbers — Inter with tabular figures (clock, slider numerals). */
+.ui-num {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.05em;
+}
+
+/* ── Fade-rise entry — staggered ────────────────────────────── */
+@keyframes fade-rise {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-rise         { animation: fade-rise 0.9s var(--ease) both; }
+.animate-fade-rise-delay   { animation: fade-rise 0.9s var(--ease) 0.20s both; }
+.animate-fade-rise-delay-2 { animation: fade-rise 0.9s var(--ease) 0.40s both; }
+.animate-fade-rise-delay-3 { animation: fade-rise 0.9s var(--ease) 0.60s both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-rise,
+  .animate-fade-rise-delay,
+  .animate-fade-rise-delay-2,
+  .animate-fade-rise-delay-3 {
+    animation: none !important;
+  }
+}

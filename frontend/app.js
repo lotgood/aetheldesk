@@ -1,5 +1,6 @@
 import { createSceneController } from "./scenes.js";
 import { byId, createFocusTrap, setHiddenInteraction } from "./src/dom.js";
+import { createDisplaySettings } from "./src/display-settings.js";
 import { createMusicController } from "./src/music-youtube.js";
 import { createRoomAuth } from "./src/room-auth.js";
 import { createRoomRenderer, playChime, startClock, tickClock, tickDate } from "./src/room-renderer.js";
@@ -17,6 +18,7 @@ const isTouch = navigator.maxTouchPoints > 1;
 if (isTouch) document.body.classList.add("touch");
 
 const sceneController = createSceneController();
+createDisplaySettings({ sceneController, statusEl: byId("room-status") });
 const renderer = createRoomRenderer({ sceneController });
 let socket;
 const auth = createRoomAuth(ROOM_ID, () => socket.reconnectNow());
@@ -56,6 +58,7 @@ function applyState(state) {
   renderer.renderCelestial(state.celestial);
   renderer.renderFocus(state.focus, state.pomodoro_remaining, state.break, state.break_remaining, state.paused);
   renderer.renderSatellite(state);
+  sceneController.updatePomodoro(state);
   renderer.renderSessions(state.sessions_done);
   timers.updateDurChips(Math.round(state.pomodoro_duration / 60));
   music.syncYT(state.music);

@@ -3,6 +3,22 @@ import { fmtTime } from "./timer-controls.js";
 
 const SAT_RADIUS = 58;
 
+// Renders the monumental timer as spans so the paused state can blink
+// the colon like a stopped clock.
+export function setPomTime(el, seconds, paused) {
+  const min = String(Math.floor(seconds / 60)).padStart(2, "0");
+  const sec = String(seconds % 60).padStart(2, "0");
+  el.textContent = "";
+  const minSpan = document.createElement("span");
+  minSpan.textContent = min;
+  const colon = document.createElement("span");
+  colon.className = "t-colon" + (paused ? " paused" : "");
+  colon.textContent = ":";
+  const secSpan = document.createElement("span");
+  secSpan.textContent = sec;
+  el.append(minSpan, colon, secSpan);
+}
+
 function updateTimerTitle(focus, remaining, isBreak, breakRemaining, paused) {
   if (focus) {
     document.title = `${fmtTime(remaining)} ${paused ? "일시정지" : "집중"} - AethelDesk`;
@@ -20,6 +36,13 @@ export function createRoomRenderer({ sceneController }) {
 
   function prefersReducedMotion() {
     return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  }
+
+  // With the 3D engine live, the legacy 2D star/cloud/satellite layers are
+  // hidden (body.3d) and their rAF loops must not run. They remain the
+  // fallback when WebGL is unavailable.
+  function is3D() {
+    return document.body.classList.contains("is-3d");
   }
 
   function renderCelestial(c) {
@@ -53,13 +76,15 @@ export function createRoomRenderer({ sceneController }) {
 
     document.body.classList.toggle("day", c.phase === "day");
 
-    const stars = byId("stars");
-    stars.style.opacity = c.phase === "night" ? "1" : "0";
-    if (c.phase === "night" && !stars.dataset.drawn) drawStars(stars);
+    if (!is3D()) {
+      const stars = byId("stars");
+      stars.style.opacity = c.phase === "night" ? "0.45" : "0";
+      if (c.phase === "night" && !stars.dataset.drawn) drawStars(stars);
 
-    const sunF = Math.max(0, Math.min(1, (elev + 6) / 8));
-    byId("clouds").style.opacity = String(sunF * 0.75);
-    initClouds();
+      const sunF = Math.max(0, Math.min(1, (elev + 6) / 8));
+      byId("clouds").style.opacity = String(sunF * 0.35);
+      initClouds();
+    }
     sceneController.render(c);
   }
 
@@ -117,11 +142,13 @@ export function createRoomRenderer({ sceneController }) {
 
   function resetForResize(currentState) {
     if (!currentState) return;
-    delete byId("stars").dataset.drawn;
-    cloudState = null;
-    if (cloudRAF) {
-      cancelAnimationFrame(cloudRAF);
-      cloudRAF = null;
+    if (!is3D()) {
+      delete byId("stars").dataset.drawn;
+      cloudState = null;
+      if (cloudRAF) {
+        cancelAnimationFrame(cloudRAF);
+        cloudRAF = null;
+      }
     }
     sceneController.resetForResize();
     renderCelestial(currentState.celestial);
@@ -139,6 +166,9 @@ export function createRoomRenderer({ sceneController }) {
     const timerStatus = byId("timer-status");
     const activeEl = document.activeElement;
     updateTimerTitle(focus, remaining, isBreak, breakRemaining, paused);
+    document.body.classList.toggle("is-session", Boolean(focus || isBreak));
+    setHiddenInteraction(byId("time-dial"), Boolean(focus || isBreak));
+    setHiddenInteraction(byId("hud-tl"), Boolean(focus || isBreak));
 
     if (focus) {
       const shouldMoveFocus = activeEl === btn || activeEl === document.body || activeEl === document.documentElement || durChips.contains(activeEl);
@@ -148,8 +178,8 @@ export function createRoomRenderer({ sceneController }) {
       setHiddenInteraction(btn, true);
       setHiddenInteraction(durChips, true);
       setHiddenInteraction(pom, false);
-      pomTime.textContent = fmtTime(remaining);
-      pomTime.style.opacity = paused ? "0.45" : "1";
+      setPomTime(pomTime, remaining, paused);
+      pomTime.style.opacity = "1";
       breakRow.style.opacity = "0"; breakRow.style.pointerEvents = "none";
       focusRow.style.opacity = "1"; focusRow.style.pointerEvents = "auto";
       setHiddenInteraction(breakRow, true);
@@ -165,7 +195,7 @@ export function createRoomRenderer({ sceneController }) {
       setHiddenInteraction(btn, true);
       setHiddenInteraction(durChips, true);
       setHiddenInteraction(pom, false);
-      pomTime.textContent = fmtTime(breakRemaining);
+      setPomTime(pomTime, breakRemaining, false);
       pomTime.style.opacity = "1";
       breakRow.style.opacity = "1"; breakRow.style.pointerEvents = "auto";
       focusRow.style.opacity = "0"; focusRow.style.pointerEvents = "none";
@@ -182,6 +212,7 @@ export function createRoomRenderer({ sceneController }) {
       setHiddenInteraction(durChips, false);
       setHiddenInteraction(pom, true);
       pomTime.style.opacity = "1";
+      setPomTime(pomTime, remaining, false);
       breakRow.style.opacity = "0"; breakRow.style.pointerEvents = "none";
       focusRow.style.opacity = "0"; focusRow.style.pointerEvents = "none";
       setHiddenInteraction(breakRow, true);
@@ -192,6 +223,27 @@ export function createRoomRenderer({ sceneController }) {
   }
 
   function renderSatellite(state) {
+    // Session progress line under the timer — drains focus and break alike
+    const ring = byId("pom-progress");
+    const active = state.focus
+      ? { remain: state.pomodoro_remaining, total: state.pomodoro_duration }
+      : state.break
+        ? { remain: state.break_remaining, total: state.break_duration }
+        : null;
+    if (ring) {
+      if (active && active.total > 0) {
+        const fraction = Math.max(0, Math.min(1, active.remain / active.total));
+        ring.style.width = (fraction * 100).toFixed(1) + "%";
+        ring.style.opacity = "0.55";
+      } else {
+        ring.style.width = "100%";
+        ring.style.opacity = "0";
+      }
+    }
+
+    // The 3D astrolabe satellite renders the session orbit when body.3d is
+    // active; the 2D satellite was only for the legacy sky layer.
+    if (is3D()) return;
     const sat = byId("sat-group");
     const rot = byId("sat-rot");
     if (!state.focus || !celestialPos || state.pomodoro_duration <= 0) {
@@ -206,12 +258,16 @@ export function createRoomRenderer({ sceneController }) {
 
   function renderSessions(count) {
     const el = byId("sessions");
-    if (!el || count === 0) {
-      if (el) el.textContent = "";
-      return;
-    }
+    if (!el) return;
+    el.textContent = "";
+    if (count === 0) return;
     const position = count % 4 || 4;
-    el.textContent = "●".repeat(position) + "○".repeat(4 - position);
+    for (let i = 0; i < 4; i++) {
+      const dot = document.createElement("span");
+      dot.className = "session-dot" + (i < position ? "" : " empty");
+      dot.setAttribute("aria-hidden", "true");
+      el.appendChild(dot);
+    }
   }
 
   setHiddenInteraction(byId("pomodoro"), true);

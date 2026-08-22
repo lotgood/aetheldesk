@@ -4,30 +4,48 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AethelDesk</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400&display=swap" rel="stylesheet" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/tailwind.css" />
+  <link rel="stylesheet" href="/fonts.css" />
+  <link rel="stylesheet" href="/velorah.css" />
   <style>
-    :root { --focus-ring: currentColor; }
-    * { font-family: 'Inter', sans-serif; }
+    /* Velorah tokens, glass, type helpers and fade-rise come from
+       /velorah.css (shared with the room). Lobby-only styles below. */
+    * { font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
     body { overflow: hidden; }
-    ::placeholder { color: currentColor; opacity: 0.25; }
-    .sr-only {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      padding: 0;
-      margin: -1px;
-      overflow: hidden;
-      clip: rect(0, 0, 0, 0);
-      white-space: nowrap;
-      border: 0;
+
+    /* Wordmark — the lobby's one monumental element. Latin copy, so the
+       serif italic is genuine (no synthetic oblique risk). */
+    .lobby-wordmark {
+      font-family: var(--font-display);
+      font-style: italic;
+      font-weight: 400;
+      font-size: clamp(2.6rem, 6vw, 3.6rem);
+      letter-spacing: 0.02em;
+      line-height: 1.05;
+      text-shadow: 0 0 50px rgba(255,255,255,0.12), 0 2px 18px rgba(0,0,0,0.35);
     }
-    button:focus-visible,
-    input:focus-visible {
-      outline: 2px solid var(--focus-ring);
-      outline-offset: 5px;
-      border-radius: 999px;
+    .lobby-tagline {
+      font-size: 11px;
+      font-weight: 400;
+      letter-spacing: var(--track-hangul);
+      opacity: 0.55;
     }
+
+    body.day #pin-input,
+    body.day #btn-start,
+    body.day #code-toggle {
+      color: var(--day-ink);
+    }
+
+    /* Pin input focus glow */
+    #pin-input:focus,
+    #room-input:focus {
+      outline: none;
+      border-bottom-color: rgba(255,255,255,0.85) !important;
+      box-shadow: 0 12px 24px -16px currentColor, 0 0 0 1px transparent;
+    }
+    ::placeholder { color: currentColor; opacity: 0.45; }
     #code-section {
       max-height: 0; opacity: 0; overflow: hidden; pointer-events: none;
       transition: max-height 0.4s ease, opacity 0.4s ease;
@@ -62,7 +80,15 @@
         <stop offset="60%"  stop-color="#D0D8F0"/>
         <stop offset="100%" stop-color="#A8B8D8"/>
       </radialGradient>
+      <radialGradient id="moonHaloL" cx="50%" cy="50%" r="50%">
+        <stop offset="0%"   stop-color="rgba(220,230,255,0.30)"/>
+        <stop offset="100%" stop-color="rgba(220,230,255,0)"/>
+      </radialGradient>
+      <filter id="arcBlur" x="-30%" y="-30%" width="160%" height="160%">
+        <feGaussianBlur stdDeviation="5" />
+      </filter>
     </defs>
+    <path id="arc-glow" fill="none" stroke-width="7" opacity="0.07" stroke-linecap="round" filter="url(#arcBlur)" />
     <path id="arc-path" fill="none" stroke-width="0.5" opacity="0.15" />
     <g id="sun-group" style="transform:translate(-200px,-200px);opacity:0;transition:opacity 1.5s ease;">
       <circle cx="0" cy="0" r="55" fill="#FFB200" opacity="0.12"/>
@@ -71,37 +97,45 @@
       <circle cx="0" cy="0" r="16" fill="#FFFBE8" opacity="0.95"/>
     </g>
     <g id="moon-group" style="transform:translate(-200px,-200px);opacity:1;transition:opacity 1.5s ease;">
+      <circle cx="0" cy="0" r="46" fill="url(#moonHaloL)"/>
       <circle cx="0" cy="0" r="13" fill="url(#moonGradL)"/>
       <circle cx="5" cy="-2" r="11" fill="#0B091A" opacity="0.90"/>
     </g>
   </svg>
 
-  <!-- Content — inherits color from body so day/night tint applies automatically -->
-  <div class="relative z-10 flex flex-col items-center gap-6">
+  <!-- Vignette for depth -->
+  <div class="absolute inset-0" aria-hidden="true"
+    style="pointer-events:none; background: radial-gradient(ellipse at center, transparent 52%, rgba(0,0,0,0.30) 100%);"></div>
 
-    <h1 class="text-xs tracking-[0.5em] uppercase font-light" style="opacity:0.35">AethelDesk</h1>
+  <!-- Content — inherits color from body so day/night tint applies automatically -->
+  <div class="relative z-10 flex flex-col items-center gap-9 animate-fade-rise">
 
     <div class="flex flex-col items-center gap-3">
+      <h1 class="lobby-wordmark" style="opacity:0.92">AethelDesk</h1>
+      <p class="lobby-tagline">같은 하늘 아래, 함께 집중</p>
+    </div>
+
+    <div class="flex flex-col items-center gap-5 animate-fade-rise-delay">
       <label for="pin-input" class="sr-only">방 PIN</label>
       <input id="pin-input" type="password" inputmode="numeric" autocomplete="off" placeholder="방 PIN"
         aria-describedby="lobby-error"
-        class="bg-transparent text-center text-sm font-light tracking-[0.3em] outline-none w-32 pb-2"
-        style="border-bottom: 1px solid currentColor; opacity: 0.75;" />
-      <button id="btn-start"
-        class="font-light tracking-[0.5em] text-xs uppercase px-10 py-4 hover:opacity-100 transition-opacity duration-300"
-        style="opacity:0.6">
+        class="bg-transparent text-center text-sm font-light tracking-[0.3em] outline-none w-36 pb-2"
+        style="border-bottom: 1px solid currentColor; opacity: 0.8; transition: box-shadow .5s ease, opacity .5s ease;" />
+      <button id="btn-start" type="button"
+        class="liquid-glass interactive font-light text-xs uppercase px-12 py-4 rounded-full"
+        style="opacity:0.85; letter-spacing: var(--track-hangul);">
         시작
       </button>
     </div>
 
-    <p id="lobby-error" class="text-xs font-light tracking-widest" role="status" aria-live="polite" aria-atomic="true" style="opacity:0.55"></p>
+    <p id="lobby-error" class="text-xs font-light" role="status" aria-live="polite" aria-atomic="true" style="opacity:0.65; letter-spacing: var(--track-hangul);"></p>
 
     <button id="code-toggle"
       type="button"
       aria-expanded="false"
       aria-controls="code-section"
-      class="text-xs font-light tracking-widest hover:opacity-60 transition-opacity duration-300"
-      style="opacity:0.25">
+      class="text-xs font-light hover:opacity-70 transition-opacity duration-300"
+      style="opacity:0.45; letter-spacing: var(--track-hangul);">
       방 코드로 입장 →
     </button>
 
@@ -114,8 +148,8 @@
           style="border-bottom: 1px solid currentColor; opacity: 0.9;" />
         <button id="btn-join"
           type="button" tabindex="-1"
-          class="text-xs tracking-[0.3em] uppercase font-light hover:opacity-100 transition-opacity duration-300"
-          style="opacity:0.4">
+          class="text-xs uppercase font-light hover:opacity-100 transition-opacity duration-300"
+          style="opacity:0.5; letter-spacing: var(--track-hangul);">
           입장
         </button>
       </div>

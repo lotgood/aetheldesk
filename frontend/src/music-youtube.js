@@ -38,6 +38,8 @@ export function createMusicController({ playlist, getState, send }) {
   }
 
   function syncYT(music) {
+    const eq = byId("eq");
+    if (eq) eq.classList.toggle("hidden", !music.playing);
     if (!ytReady || !ytPlayer) return;
     if (music.playing) {
       if (music.video_id === pendingVideoId) {
@@ -115,6 +117,7 @@ export function createMusicController({ playlist, getState, send }) {
   byId("btn-play").addEventListener("click", () => send({ type: "music_play" }));
   byId("btn-pause").addEventListener("click", () => send({ type: "music_pause" }));
   byId("btn-skip").addEventListener("click", () => {
+    if (playlist.ids.length === 0) return;
     playlist.index = (playlist.index + 1) % playlist.ids.length;
     const id = playlist.ids[playlist.index];
     if (ytReady && ytPlayer) loadVideo(id);

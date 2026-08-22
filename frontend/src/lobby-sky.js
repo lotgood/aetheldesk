@@ -1,4 +1,5 @@
-const CYCLE_MS = 40000;
+/* The lobby sky mirrors real local time (like the room's default sky)
+   instead of strobing through a fake fast day/night cycle. */
 const KF = [
   { t: 0.00, top: "#0A0A14", bot: "#1A0A2E", dayF: 0 },
   { t: 0.18, top: "#1A0A2E", bot: "#2C1654", dayF: 0 },
@@ -60,7 +61,10 @@ function updateArc(arcPct, dayF) {
   const ry = height * 0.55;
   const cx = width / 2;
   const cy = height * 0.88;
-  document.getElementById("arc-path").setAttribute("d", `M ${cx - rx} ${cy} A ${rx} ${ry} 0 0 1 ${cx + rx} ${cy}`);
+  const arcD = `M ${cx - rx} ${cy} A ${rx} ${ry} 0 0 1 ${cx + rx} ${cy}`;
+  document.getElementById("arc-path").setAttribute("d", arcD);
+  const arcGlow = document.getElementById("arc-glow");
+  if (arcGlow) arcGlow.setAttribute("d", arcD);
   const angle = Math.PI - arcPct * Math.PI;
   const x = cx + rx * Math.cos(angle);
   const y = cy - ry * Math.sin(angle);
@@ -68,8 +72,11 @@ function updateArc(arcPct, dayF) {
   const mg = document.getElementById("moon-group");
   sg.style.transform = `translate(${x}px,${y}px)`;
   mg.style.transform = `translate(${x}px,${y}px)`;
-  const sunOpacity = Math.max(0, Math.min(1, (dayF - 0.15) / 0.35));
-  const moonOpacity = Math.max(0, Math.min(1, (0.50 - dayF) / 0.35));
+  /* Fade the orb near the arc endpoints so it never sits clipped
+     against the viewport corner. */
+  const edgeFade = Math.max(0, Math.min(1, Math.sin(arcPct * Math.PI) * 2.2));
+  const sunOpacity = Math.max(0, Math.min(1, (dayF - 0.15) / 0.35)) * edgeFade;
+  const moonOpacity = Math.max(0, Math.min(1, (0.50 - dayF) / 0.35)) * edgeFade;
   sg.style.opacity = String(sunOpacity);
   mg.style.opacity = String(moonOpacity);
   document.getElementById("arc-path").setAttribute("stroke", dayF > 0.5 ? "rgba(15,30,50,0.15)" : "rgba(255,255,255,0.15)");
@@ -111,14 +118,19 @@ function prefersReducedMotion() {
   return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 }
 
-export function startLobbySky() {
-  let startTime = null;
+function currentPhase() {
+  const now = new Date();
+  const minutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+  return minutes / 1440;
+}
 
+export function startLobbySky() {
   function render(t, moveClouds) {
     const sky = skyAt(t);
     document.body.style.background = `linear-gradient(to bottom, ${sky.top}, ${sky.bot})`;
     const color = NIGHT_COLOR.map((n, i) => Math.round(lerpN(n, DAY_COLOR[i], sky.dayF)));
     document.body.style.color = `rgb(${color.join(",")})`;
+    document.body.classList.toggle("day", sky.dayF > 0.5);
     const stars = document.getElementById("stars");
     const nightF = Math.max(0, 1 - sky.dayF);
     if (nightF > 0.05) {
@@ -131,15 +143,13 @@ export function startLobbySky() {
     if (moveClouds) tickClouds(sky.dayF);
   }
 
-  function frame(now) {
-    if (!startTime) startTime = now;
-    const t = ((now - startTime) % CYCLE_MS) / CYCLE_MS;
-    render(t, true);
+  function frame() {
+    render(currentPhase(), true);
     requestAnimationFrame(frame);
   }
 
   if (prefersReducedMotion()) {
-    render(0.5, false);
+    render(currentPhase(), false);
     return;
   }
   requestAnimationFrame(frame);

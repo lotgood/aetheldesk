@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AethelDesk</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital,wght@0,400;1,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/tailwind.css" />
+  <link rel="stylesheet" href="/fonts.css" />
+  <link rel="stylesheet" href="/velorah.css" />
   <style>
     /* ──────────────────────────────────────────────────────────────
        AethelDesk · Room
@@ -15,46 +15,9 @@
                 Inter body, liquid glass with gradient-edge borders.
        ────────────────────────────────────────────────────────────── */
 
-    :root {
-      /* Tokens (HSL — adapted from Velorah, dark-only). */
-      --background:         0 0% 0%;
-      --foreground:         0 0% 100%;
-      --card:               0 0% 6%;
-      --card-foreground:    0 0% 100%;
-      --primary:            0 0% 100%;
-      --primary-foreground: 0 0% 4%;
-      --muted:              0 0% 10%;
-      --muted-foreground:   240 4% 66%;
-      --border:             0 0% 18%;
-      --ring:               0 0% 100%;
-      --radius:             0.5rem;
-
-      --font-display: 'Instrument Serif', 'Times New Roman', serif;
-      --font-body:    'Inter', system-ui, sans-serif;
-
-      --ease:      cubic-bezier(.32,.72,.32,1);
-      --ease-slow: cubic-bezier(.5,.05,.2,1);
-    }
-
+    /* Tokens, glass, type helpers, and fade-rise live in /velorah.css
+       (shared with the lobby). This block holds room-only styling. */
     * { font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
-    .font-display { font-family: var(--font-display); font-weight: 400; }
-    .sr-only {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      padding: 0;
-      margin: -1px;
-      overflow: hidden;
-      clip: rect(0, 0, 0, 0);
-      white-space: nowrap;
-      border: 0;
-    }
-    button:focus-visible,
-    input:focus-visible {
-      outline: 2px solid hsl(var(--ring));
-      outline-offset: 5px;
-      border-radius: 999px;
-    }
 
     /* Registered custom props so the sky gradient can transition. */
     @property --sky-top { syntax: '<color>'; inherits: true; initial-value: #000000; }
@@ -79,65 +42,14 @@
     }
 
     /* ──────────────────────────────────────────────────────────────
-       Liquid Glass — verbatim from the Velorah system.
-       Mild blur, ~1% white tint, gradient-border drawn with mask-xor.
+       3D mode: when the WebGL engine is live, the legacy 2D sun/moon
+       arc, starfield, and cloud layers are replaced by their 3D
+       counterparts. They stay as a no-WebGL fallback otherwise.
        ────────────────────────────────────────────────────────────── */
-    .liquid-glass {
-      position: relative;
-      overflow: hidden;
-      background: rgba(255, 255, 255, 0.01);
-      background-blend-mode: luminosity;
-      backdrop-filter: blur(4px) saturate(140%);
-      -webkit-backdrop-filter: blur(4px) saturate(140%);
-      border: none;
-      box-shadow:
-        inset 0 1px 1px rgba(255,255,255,0.10),
-        0 20px 60px -30px rgba(0,0,0,0.7);
-    }
-    .liquid-glass::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      padding: 1.4px;
-      border-radius: inherit;
-      background: linear-gradient(180deg,
-        rgba(255,255,255,0.45) 0%,
-        rgba(255,255,255,0.15) 20%,
-        rgba(255,255,255,0)    40%,
-        rgba(255,255,255,0)    60%,
-        rgba(255,255,255,0.15) 80%,
-        rgba(255,255,255,0.45) 100%);
-      -webkit-mask:
-        linear-gradient(#000 0 0) content-box,
-        linear-gradient(#000 0 0);
-      -webkit-mask-composite: xor;
-              mask-composite: exclude;
-      pointer-events: none;
-    }
-    /* Stronger edge highlight on hover — the glass "lights up". */
-    .liquid-glass.interactive { transition: transform .6s var(--ease); }
-    .liquid-glass.interactive:hover::before {
-      background: linear-gradient(180deg,
-        rgba(255,255,255,0.65) 0%,
-        rgba(255,255,255,0.22) 20%,
-        rgba(255,255,255,0.04) 40%,
-        rgba(255,255,255,0.04) 60%,
-        rgba(255,255,255,0.22) 80%,
-        rgba(255,255,255,0.65) 100%);
-      transition: background .6s var(--ease);
-    }
-
-    /* ──────────────────────────────────────────────────────────────
-       Fade-rise entry — from the Velorah animation set, staggered.
-       ────────────────────────────────────────────────────────────── */
-    @keyframes fade-rise {
-      from { opacity: 0; transform: translateY(24px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    .animate-fade-rise         { animation: fade-rise 0.9s var(--ease) both; }
-    .animate-fade-rise-delay   { animation: fade-rise 0.9s var(--ease) 0.20s both; }
-    .animate-fade-rise-delay-2 { animation: fade-rise 0.9s var(--ease) 0.40s both; }
-    .animate-fade-rise-delay-3 { animation: fade-rise 0.9s var(--ease) 0.60s both; }
+    body.is-3d #sky,
+    body.is-3d #stars,
+    body.is-3d #clouds,
+    body.is-3d #sat-group { display: none !important; }
 
     /* ──────────────────────────────────────────────────────────────
        Scene + canvas transitions (kept exactly as the JS expects).
@@ -165,34 +77,20 @@
        Typography
        ────────────────────────────────────────────────────────────── */
 
-    /* Timer: serif, ultra-large, soft luminous shadow. */
+    /* Timer: serif, ultra-large, soft luminous shadow.
+       The digits live in child spans (setPomTime), so they must re-take
+       the display face: the universal font-body rule hits every span. */
+    #pom-time > span { font-family: var(--font-display); }
     #pom-time {
       font-family: var(--font-display);
       font-weight: 400;
       font-size: clamp(7.5rem, 16vw, 14rem);
       line-height: 0.92;
       letter-spacing: -0.025em;
-      font-variant-numeric: tabular-nums lining-nums;
+      /* No font-variant-numeric here: Instrument Serif has no tnum table
+         and requesting it can push Chromium to re-match a fallback face. */
       text-shadow: 0 0 60px rgba(255,255,255,0.10), 0 4px 24px rgba(0,0,0,0.30);
       color: hsl(var(--foreground));
-    }
-
-    /* Tiny labels — Inter, wide-tracked uppercase, muted. */
-    .ui-label {
-      font-family: var(--font-body);
-      font-size: 10px;
-      font-weight: 400;
-      letter-spacing: 0.22em;
-      text-transform: uppercase;
-      color: hsl(var(--muted-foreground));
-    }
-
-    /* Numbers — Inter with tabular figures (clock, slider numerals). */
-    .ui-num {
-      font-family: var(--font-body);
-      font-weight: 500;
-      font-variant-numeric: tabular-nums;
-      letter-spacing: 0.05em;
     }
 
     /* ──────────────────────────────────────────────────────────────
@@ -203,7 +101,22 @@
       align-items: center;
       gap: 0.7rem;
       padding: 0.45rem 0.85rem;
-      border-radius: 999px;
+      border-radius: var(--radius-pill);
+    }
+
+    /* Session dots — filled = completed sessions, ring = remaining */
+    .session-dot {
+      display: inline-block;
+      width: 4px;
+      height: 4px;
+      border-radius: var(--radius-pill);
+      background: currentColor;
+      opacity: 0.75;
+    }
+    .session-dot.empty {
+      background: transparent;
+      box-shadow: inset 0 0 0 1px currentColor;
+      opacity: 0.35;
     }
 
     /* ──────────────────────────────────────────────────────────────
@@ -212,9 +125,10 @@
     .focus-btn {
       position: relative;
       padding: 1.05rem 2.75rem 1.15rem;
-      border-radius: 999px;
+      border-radius: var(--radius-pill);
       font-family: var(--font-display);
-      font-style: italic;
+      /* No italic: the copy is Korean and system Hangul fallbacks can only
+         synthesize an oblique, which reads as a rendering glitch. */
       font-weight: 400;
       font-size: 28px;
       letter-spacing: 0.005em;
@@ -247,10 +161,10 @@
     .dur-segment {
       position: relative;
       padding: 0.55rem 1.25rem;
-      border-radius: 999px;
+      border-radius: var(--radius-pill);
       font-size: 11px;
       font-weight: 400;
-      letter-spacing: 0.32em;
+      letter-spacing: var(--track-hangul);
       text-transform: uppercase;
       color: hsl(var(--muted-foreground));
       transition: color .5s ease, background .5s ease;
@@ -266,12 +180,12 @@
        ────────────────────────────────────────────────────────────── */
     .pom-ctl {
       font-size: 10.5px;
-      letter-spacing: 0.34em;
+      letter-spacing: var(--track-hangul);
       text-transform: uppercase;
       font-weight: 400;
       color: hsl(var(--muted-foreground));
       padding: 0.55rem 1rem;
-      border-radius: 999px;
+      border-radius: var(--radius-pill);
       transition: color .5s ease, background .5s ease;
     }
     .pom-ctl:hover { color: hsl(var(--foreground)); background: rgba(255,255,255,0.04); }
@@ -284,13 +198,13 @@
       align-items: center;
       gap: 1.5rem;
       padding: 0.65rem 1.4rem;
-      border-radius: 999px;
+      border-radius: var(--radius-pill);
     }
     .ctrl-btn {
       position: relative;
       display: inline-flex; align-items: center; gap: 0.4rem;
       font-size: 11px;
-      letter-spacing: 0.30em;
+      letter-spacing: var(--track-hangul);
       text-transform: uppercase;
       font-weight: 400;
       color: rgba(255,255,255,0.78);
@@ -314,30 +228,6 @@
       background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.20), transparent);
     }
 
-    /* ──────────────────────────────────────────────────────────────
-       More panel — slides up above the bar
-       ────────────────────────────────────────────────────────────── */
-    #more-panel {
-      max-height: 0;
-      opacity: 0;
-      overflow: hidden;
-      pointer-events: none;
-      transform: translateY(8px);
-      transition: max-height 0.5s var(--ease), opacity 0.5s var(--ease),
-                  transform 0.6s var(--ease);
-    }
-    /* Non-zero inline max-height (set by JS) opens the panel. */
-    #more-panel[style*="max-height"]:not([style*="max-height: 0"]):not([style*="max-height:0"]) {
-      opacity: 1;
-      pointer-events: auto;
-      transform: translateY(0);
-    }
-    .more-inner {
-      margin-bottom: 0.7rem;
-      padding: 0.6rem 1.4rem;
-      border-radius: 999px;
-    }
-
     #track-input {
       user-select: text; -webkit-user-select: text;
       font-family: var(--font-body);
@@ -348,6 +238,16 @@
     }
     #track-input::placeholder { color: rgba(255,255,255,0.40); }
     #track-modal { transition: opacity 0.2s ease; }
+
+    /* Display settings popover: wraps on narrow screens, pressed state
+       dims the toggle instead of hiding it. */
+    #display-panel { flex-wrap: wrap; justify-content: center; max-width: min(92vw, 640px); row-gap: 0.35rem; }
+    .ctrl-btn[aria-pressed="false"] { opacity: 0.38; }
+    select.ctrl-btn {
+      background: transparent; border: none; outline: none; cursor: pointer;
+      font-family: inherit; padding: 0.35rem 0.2rem;
+    }
+    select.ctrl-btn option { color: #101725; letter-spacing: 0.05em; text-transform: none; }
     #room-auth {
       transition: opacity 0.5s var(--ease);
     }
@@ -397,6 +297,35 @@
       height: 2px; background: rgba(255,255,255,0.20); border-radius: 1px;
     }
 
+    /* Paused timer: the colon blinks like a stopped clock */
+    .t-colon.paused {
+      animation: colon-blink 1.4s steps(2, start) infinite;
+    }
+    @keyframes colon-blink {
+      to { opacity: 0.25; }
+    }
+
+    /* Music equalizer — three bars bouncing while a track plays */
+    .eq {
+      display: inline-flex;
+      align-items: flex-end;
+      gap: 2px;
+      height: 10px;
+    }
+    .eq i {
+      width: 2px;
+      height: 4px;
+      background: currentColor;
+      border-radius: 1px;
+      animation: eq-bounce 1s ease-in-out infinite;
+    }
+    .eq i:nth-child(2) { animation-delay: 0.18s; }
+    .eq i:nth-child(3) { animation-delay: 0.36s; }
+    @keyframes eq-bounce {
+      0%, 100% { height: 4px; }
+      50%      { height: 10px; }
+    }
+
     /* ──────────────────────────────────────────────────────────────
        Connection dot — gentle breathing pulse
        ────────────────────────────────────────────────────────────── */
@@ -423,8 +352,10 @@
     body.day .pom-ctl:hover,
     body.day .dur-segment:hover { color: rgba(15, 25, 45, 1); }
     body.day .dur-segment[data-active="true"] {
-      color: rgba(15, 25, 45, 1);
-      background: rgba(15, 25, 45, 0.08);
+      /* Solid ink fill: the 8% wash read as inactive over a bright sky. */
+      color: rgba(255, 255, 255, 0.96);
+      background: rgba(15, 25, 45, 0.88);
+      text-shadow: none;
     }
     body.day .focus-btn { color: rgba(15, 25, 45, 0.95); }
     body.day #pom-time  {
@@ -434,34 +365,99 @@
     body.day input[type=range]::-webkit-slider-thumb { background: rgba(15,25,45,0.95); box-shadow: 0 0 0 1px rgba(255,255,255,0.5), 0 2px 6px rgba(0,0,0,0.15); }
     body.day input[type=range]::-webkit-slider-runnable-track { background: rgba(15,25,45,0.22); }
 
-    body[data-scene="city"].day,
-    body[data-scene="forest"].day {
-      color: white !important;
-      text-shadow: 0 1px 5px rgba(0,0,0,0.60), 0 0 14px rgba(0,0,0,0.40);
+    /* Track input inherits white ink by default; invert it in daylight. */
+    body.day #track-input {
+      color: var(--day-ink);
+      border-color: rgba(15,25,45,0.35) !important;
     }
-    body[data-scene="city"].day [class*="text-white"],
-    body[data-scene="forest"].day [class*="text-white"] { color: white !important; }
-    body[data-scene="city"].day #arc-path,
-    body[data-scene="forest"].day #arc-path { stroke: rgba(255,255,255,0.15) !important; }
-    body[data-scene="city"].day .ui-label,
-    body[data-scene="forest"].day .ui-label,
-    body[data-scene="city"].day .dur-segment,
-    body[data-scene="forest"].day .dur-segment,
-    body[data-scene="city"].day .pom-ctl,
-    body[data-scene="forest"].day .pom-ctl,
-    body[data-scene="city"].day .ctrl-btn,
-    body[data-scene="forest"].day .ctrl-btn { color: rgba(255,255,255,0.78); }
-    body[data-scene="city"].day .focus-btn,
-    body[data-scene="forest"].day .focus-btn { color: white; }
-    body[data-scene="city"].day #pom-time,
-    body[data-scene="forest"].day #pom-time { color: white; text-shadow: 0 0 60px rgba(255,255,255,0.10), 0 4px 24px rgba(0,0,0,0.5); }
-    body[data-scene="city"].day input[type=range]::-webkit-slider-thumb,
-    body[data-scene="forest"].day input[type=range]::-webkit-slider-thumb { background: rgba(255,255,255,0.98); box-shadow: 0 0 0 1px rgba(0,0,0,0.25), 0 0 14px rgba(255,255,255,0.45); }
-    body[data-scene="city"].day input[type=range]::-webkit-slider-runnable-track,
-    body[data-scene="forest"].day input[type=range]::-webkit-slider-runnable-track { background: rgba(255,255,255,0.22); }
+    body.day #track-input::placeholder { color: rgba(15,25,45,0.45); }
 
-    body[data-scene="beach"].day {
-      text-shadow: 0 0 8px rgba(255,255,255,0.65), 0 1px 3px rgba(255,255,255,0.50);
+    /* The bare date label needs more presence over a bright sky. */
+    body.day #date-label { opacity: 0.95; color: rgba(15,25,45,0.75); }
+
+    /* Every scene is bright in daylight now that the 3D layer actually
+       renders, so no scene gets a white-text exception. Dark ink plus a
+       white halo keeps labels readable over sky, haze, water and canopy
+       alike. */
+    body.day {
+      text-shadow: 0 0 8px rgba(255,255,255,0.60), 0 1px 3px rgba(255,255,255,0.45);
+    }
+
+    /* Liquid glass is a dark-background material: a 1% white tint with a
+       white gradient edge disappears against a bright sky. In daylight the
+       surface inverts to a light-ink scrim so chips and bars stay legible. */
+    body.day .liquid-glass {
+      background: rgba(255, 255, 255, 0.38);
+      box-shadow:
+        inset 0 1px 1px rgba(255,255,255,0.55),
+        0 18px 50px -30px rgba(15,25,45,0.45);
+    }
+    body.day .liquid-glass::before {
+      background: linear-gradient(180deg,
+        rgba(15,25,45,0.22) 0%,
+        rgba(15,25,45,0.10) 20%,
+        rgba(15,25,45,0)    40%,
+        rgba(15,25,45,0)    60%,
+        rgba(15,25,45,0.10) 80%,
+        rgba(15,25,45,0.22) 100%);
+    }
+    body.day #conn-dot { box-shadow: 0 0 8px currentColor; }
+
+    /* ──────────────────────────────────────────────────────────────
+       PIN dialog: the first screen a joining member sees, and it can
+       appear before any celestial state has arrived — so it carries its
+       own contrast instead of inheriting the day/night theme.
+       ────────────────────────────────────────────────────────────── */
+    #room-auth { background: rgba(8, 12, 22, 0.45); backdrop-filter: blur(2px); }
+    #room-auth .liquid-glass,
+    body.day #room-auth .liquid-glass {
+      background: rgba(10, 16, 28, 0.82);
+      box-shadow:
+        inset 0 1px 1px rgba(255,255,255,0.14),
+        0 30px 80px -40px rgba(0,0,0,0.85);
+    }
+    #room-auth .liquid-glass::before,
+    body.day #room-auth .liquid-glass::before {
+      background: linear-gradient(180deg,
+        rgba(255,255,255,0.40) 0%,
+        rgba(255,255,255,0.12) 30%,
+        rgba(255,255,255,0)    50%,
+        rgba(255,255,255,0.12) 70%,
+        rgba(255,255,255,0.40) 100%);
+    }
+    #room-auth,
+    body.day #room-auth,
+    body.day #room-auth [class*="text-white"] {
+      color: rgba(255,255,255,0.92) !important;
+      text-shadow: none;
+    }
+    #room-auth .ui-label { opacity: 0.85; }
+    #room-auth #room-pin-input { color: #fff; border-color: rgba(255,255,255,0.35); }
+    #room-auth #room-pin-input::placeholder { color: rgba(255,255,255,0.45); }
+    body.day #room-auth .ctrl-btn { color: rgba(255,255,255,0.9); }
+
+    /* Session HUD: sparse chrome during focus/break. Never hide #hud-tr. */
+    body.is-session #hud-tl,
+    body.is-session #time-dial,
+    body.is-session #dur-chips {
+      opacity: 0;
+      pointer-events: none;
+    }
+    body.is-session #hud-tr .hud-chip,
+    body.is-session #clock,
+    body.is-session #date-label,
+    body.is-session #conn-dot {
+      opacity: 0;
+      pointer-events: none;
+    }
+    body.is-session #focus-row,
+    body.is-session #break-row {
+      background: transparent;
+      box-shadow: none;
+    }
+    body.is-session #focus-row.liquid-glass::before,
+    body.is-session #break-row.liquid-glass::before {
+      display: none;
     }
 
     /* Music bar: hidden by default, revealed by JS when user adds a track */
@@ -505,30 +501,42 @@
                         left: auto !important; right: 0.9rem !important;
                         padding: 0 !important; align-items: flex-end !important; }
       .ctrl-bar       { gap: 0.75rem !important; padding: 0.5rem 1rem !important; }
-      .ctrl-btn       { font-size: 10px !important; letter-spacing: 0.16em !important; }
+      .ctrl-btn       { font-size: 10px !important; letter-spacing: var(--track-hangul) !important; }
       #center-cluster { gap: 0.8rem !important; }
       #pom-time       { font-size: clamp(3.2rem, 10vw, 5rem) !important; }
       #pomodoro       { gap: 0.8rem !important; }
       .focus-btn      { font-size: 20px !important; padding: 0.72rem 1.8rem 0.82rem !important; }
     }
 
-    /* Portrait mobile (width ≤ 600 px) */
+    /* Portrait mobile (width ≤ 600 px): time dial floats above the
+       control bar so the two bottom controls never collide. */
     @media (orientation: portrait) and (max-width: 600px) {
       #hud-tl         { top: 1.1rem !important; left: 1.1rem !important; }
       #hud-tr         { top: 1.1rem !important; right: 1.1rem !important; }
       #pom-time       { font-size: clamp(4.5rem, 22vw, 7.5rem) !important; }
       .focus-btn      { font-size: 24px !important; padding: 0.9rem 2.2rem 1rem !important; }
-      #time-dial      { bottom: 4.8rem !important; left: 1.1rem !important; }
+      #time-dial      { bottom: 8.6rem !important; left: 1.1rem !important; }
       #time-dial .liquid-glass { min-width: 0 !important; padding: 0.45rem 0.75rem !important; }
       .dial-header    { display: none !important; }
       #controls       { bottom: 1.3rem !important; padding-inline: 0.75rem !important; }
       .ctrl-bar       { gap: 0.75rem !important; padding: 0.55rem 1rem !important; }
-      .ctrl-btn       { font-size: 10px !important; letter-spacing: 0.15em !important; }
+      .ctrl-btn       { font-size: 10px !important; letter-spacing: var(--track-hangul) !important; }
       .ctrl-sep       { height: 10px !important; }
+    }
+
+    /* Portrait tablet (601–900 px): same collision fix, dial stays left. */
+    @media (orientation: portrait) and (min-width: 601px) and (max-width: 900px) {
+      #time-dial      { bottom: 8.6rem !important; left: 1.4rem !important; }
+      #controls       { bottom: 1.4rem !important; padding-inline: 0.9rem !important; }
     }
   </style>
 </head>
 <body class="w-screen h-screen overflow-hidden flex items-center justify-center select-none">
+
+  <!-- Vignette for depth (sits above the 3D canvas, below the HUD) -->
+  <div class="absolute inset-0" aria-hidden="true"
+    style="position:fixed; inset:0; z-index:-1; pointer-events:none;
+      background: radial-gradient(ellipse at center, transparent 46%, rgba(0,0,0,0.34) 100%);"></div>
 
   <!-- Stars (night only) -->
   <canvas id="stars" class="absolute inset-0 w-full h-full opacity-0"></canvas>
@@ -674,7 +682,7 @@
       집중 시작
     </button>
 
-    <div id="dur-chips" class="liquid-glass inline-flex items-center gap-1 px-1.5 py-1.5" role="group" aria-label="집중 시간 선택" style="border-radius: 999px;">
+    <div id="dur-chips" class="liquid-glass inline-flex items-center gap-1 px-1.5 py-1.5" role="group" aria-label="집중 시간 선택" style="border-radius: var(--radius-pill);">
       <button data-min="25" class="dur-segment" aria-pressed="false">25분</button>
       <button data-min="50" class="dur-segment" aria-pressed="false">50분</button>
     </div>
@@ -686,6 +694,13 @@
   <div id="pomodoro"
     class="absolute z-10 opacity-0 pointer-events-none flex flex-col items-center gap-12">
     <span id="pom-time">50:00</span>
+
+    <!-- Session progress line — drains as the timer runs -->
+    <div class="relative w-72 h-px rounded-full" aria-hidden="true"
+      style="background: rgba(255,255,255,0.10);">
+      <div id="pom-progress" class="absolute inset-y-0 left-0 rounded-full bg-current"
+        style="width:100%; opacity:0.55;"></div>
+    </div>
 
     <div class="grid place-items-center">
       <div id="break-row"
@@ -711,8 +726,15 @@
     <div class="liquid-glass px-4 py-3 flex flex-col gap-2" style="min-width: 12rem; border-radius: var(--radius);">
       <div class="dial-header flex items-center justify-between">
         <div class="flex items-center gap-1.5 opacity-80">
-          <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+          <svg id="icon-sun" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4"/>
+            <line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/>
+            <line x1="4.9" y1="4.9" x2="6.3" y2="6.3"/><line x1="17.7" y1="17.7" x2="19.1" y2="19.1"/>
+            <line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/>
+            <line x1="4.9" y1="19.1" x2="6.3" y2="17.7"/><line x1="17.7" y1="6.3" x2="19.1" y2="4.9"/>
+          </svg>
+          <svg id="icon-moon" class="w-3 h-3 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>
           </svg>
           <span class="ui-label">시간</span>
         </div>
@@ -739,6 +761,7 @@
 
     <!-- Music controls: hidden until user adds a track -->
     <div id="music-bar" class="ctrl-bar liquid-glass" aria-hidden="true" inert>
+      <span id="eq" class="eq hidden" aria-hidden="true"><i></i><i></i><i></i></span>
       <button id="btn-pause" class="ctrl-btn" aria-label="음악 일시정지">일시정지</button>
       <button id="btn-play"  class="ctrl-btn" aria-label="음악 재생">재생</button>
       <span class="ctrl-sep"></span>
@@ -746,7 +769,7 @@
     </div>
 
     <!-- Track input: shown when + 트랙 tapped -->
-    <div id="track-row" class="liquid-glass" style="display:none;border-radius:999px;padding:0.6rem 1.2rem;align-items:center;gap:0.75rem;" aria-hidden="true" inert>
+    <div id="track-row" class="liquid-glass" style="display:none;border-radius:var(--radius-pill);padding:0.6rem 1.2rem;align-items:center;gap:0.75rem;" aria-hidden="true" inert>
       <label for="track-input" class="sr-only">음악 트랙 YouTube 링크 또는 영상 ID</label>
       <input id="track-input" type="text" inputmode="url" autocomplete="off" spellcheck="false"
               placeholder="YouTube URL 또는 영상 ID"
@@ -768,6 +791,26 @@
       <button id="btn-exit-no"  class="ctrl-btn">취소</button>
     </div>
 
+    <!-- Display settings: shown when ⚙ 화면 tapped -->
+    <div id="display-panel" class="ctrl-bar liquid-glass" role="dialog" aria-modal="true" aria-labelledby="display-panel-title" style="display:none;" aria-hidden="true" inert tabindex="-1">
+      <span id="display-panel-title" class="ctrl-btn" style="opacity:0.65;cursor:default;pointer-events:none;">화면</span>
+      <span class="ctrl-sep"></span>
+      <label for="quality-select" class="sr-only">화질</label>
+      <select id="quality-select" class="ctrl-btn">
+        <option value="auto">자동</option>
+        <option value="low">낮음</option>
+        <option value="medium">보통</option>
+        <option value="high">높음</option>
+        <option value="ultra">매우 높음</option>
+      </select>
+      <span class="ctrl-sep"></span>
+      <button id="fx-bloom"   class="ctrl-btn" aria-pressed="true">블룸</button>
+      <button id="fx-shafts"  class="ctrl-btn" aria-pressed="true">빛줄기</button>
+      <button id="fx-grain"   class="ctrl-btn" aria-pressed="true">그레인</button>
+      <button id="fx-shadows" class="ctrl-btn" aria-pressed="true">그림자</button>
+      <button id="fx-mica"    class="ctrl-btn" aria-pressed="true">반짝임</button>
+    </div>
+
     <!-- Action bar: always visible -->
     <div id="action-bar" class="ctrl-bar liquid-glass">
       <button id="btn-scene"     class="ctrl-btn" aria-label="장면 바꾸기: 하늘">◈ 하늘</button>
@@ -775,6 +818,8 @@
       <button id="btn-add-track" class="ctrl-btn" aria-describedby="track-error">+ 트랙</button>
       <span class="ctrl-sep"></span>
       <button id="btn-locate"    class="ctrl-btn" aria-describedby="location-help room-status">◎ 위치</button>
+      <span class="ctrl-sep"></span>
+      <button id="btn-display"   class="ctrl-btn" aria-expanded="false" aria-controls="display-panel">⚙ 화면</button>
       <span class="ctrl-sep"></span>
       <button id="btn-exit"      class="ctrl-btn">← 나가기</button>
     </div>

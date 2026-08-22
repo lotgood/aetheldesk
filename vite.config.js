@@ -11,7 +11,15 @@ export default defineConfig({
         lobby: resolve(__dirname, "frontend/lobby.html"),
         room: resolve(__dirname, "frontend/room.html"),
       },
+      output: {
+        // three.js is the dominant weight of the room bundle; give it its
+        // own chunk so it caches independently of app code.
+        manualChunks: {
+          three: ["three"],
+        },
+      },
     },
+    chunkSizeWarningLimit: 600,
   },
   server: {
     proxy: {
