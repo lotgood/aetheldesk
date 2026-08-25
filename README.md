@@ -12,6 +12,18 @@
 
 AethelDesk is a small shared-room dashboard for focus sessions, celestial ambience, and synchronized lofi controls. Run it on your Mac, open the same PIN-protected room on your iPad, and keep both screens in sync.
 
+<p align="center">
+  <img src="docs/assets/readme/hero-coast-sunset.jpg" alt="AethelDesk shared focus room overlooking a calm coast at sunset" width="100%">
+</p>
+
+## Visual Tour
+
+The same 50+10 focus room moves naturally through the day and across three distinct environments while keeping the timer and shared controls consistent.
+
+| Moonlit coast | City after dark | Alpine forest |
+|---|---|---|
+| ![Moonlit coast with stars, a subtle Milky Way, and visible shoreline](docs/assets/readme/coast-night.jpg) | ![Night city with lit windows and synchronized focus controls](docs/assets/readme/city-night.jpg) | ![Daytime alpine forest with snow-capped rock mountains](docs/assets/readme/forest-noon.jpg) |
+
 ## Architecture
 
 AethelDesk keeps room coordination server owned while the browser client stays lightweight:
