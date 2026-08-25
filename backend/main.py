@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend import config
 from backend.connection_manager import LocalConnectionManager
-from backend.state import BackendState, MusicState, _parse_iso, advance_timer_state
+from backend.state import BackendState, _parse_iso, advance_timer_state
 
 
 def _backend_module(name: str) -> Any:
@@ -82,7 +82,6 @@ worker_id = config.get_worker_identity()
 
 __all__ = [
     "BackendState",
-    "MusicState",
     "_parse_iso",
     "advance_timer_state",
 ]

@@ -34,11 +34,7 @@ def _create_room(page: Page, live_server: str) -> str:
 def test_retired_beach_preference_migrates_to_the_unified_coast(browser: Browser, live_server: str) -> None:
     context = browser.new_context()
     page = context.new_page()
-    # Playwright also runs init scripts in the transient same-origin about:blank
-    # document used by the YouTube iframe. Restrict this legacy preference seed
-    # to the top-level document, otherwise that iframe can write `beach` back
-    # after the room module has already migrated it to the unified coast.
-    page.add_init_script("if (window.top === window) localStorage.setItem('scene', 'beach')")
+    page.add_init_script("localStorage.setItem('scene', 'beach')")
 
     _create_room(page, live_server)
 

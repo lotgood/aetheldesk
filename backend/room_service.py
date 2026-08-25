@@ -12,7 +12,13 @@ from backend import auth, config
 from backend import state as state_reducer
 from backend.event_bus import RedisStateEventBus
 from backend.redis_contract import is_valid_room_id, normalize_room_id
-from backend.room_store import RedisUnavailable, RoomLimitReached, create_redis_store
+from backend.room_store import (
+    RedisUnavailable,
+    RoomGenerationChanged,
+    RoomLimitReached,
+    StateConflict,
+    create_redis_store,
+)
 from backend.state import BackendState
 
 
@@ -96,44 +102,52 @@ async def _record_failed_attempt(room_id: str, fingerprint: str) -> None:
         raise HTTPException(status_code=403, detail=auth.failure_body()["detail"])
 
 
-async def _issue_room_token(room_id: str) -> str:
+async def _issue_room_token(room_id: str, expected_instance_id: str) -> str:
     runtime = _runtime()
     normalized = normalize_room_id(room_id)
     token = auth.create_token()
+    token_hash = _scoped_token_hash(token, expected_instance_id)
     if runtime.room_store is not None:
-        metadata = await runtime.room_store.get_metadata(normalized)
-        room_instance_id = _metadata_room_instance_id(metadata)
-        if room_instance_id is None or not await runtime.room_store.has_room(normalized):
+        try:
+            await runtime.room_store.set_token_lookup(
+                normalized,
+                token_hash,
+                expected_instance_id=expected_instance_id,
+            )
+        except RoomGenerationChanged:
             await _auth_failure()
-        else:
-            token_hash = _scoped_token_hash(token, room_instance_id)
-        await runtime.room_store.set_token_lookup(normalized, token_hash)
     else:
-        room_instance_id = runtime.local_room_instance_ids.get(normalized)
-        if room_instance_id is None:
+        if runtime.local_room_instance_ids.get(normalized) != expected_instance_id:
             await _auth_failure()
-        else:
-            token_hash = _scoped_token_hash(token, room_instance_id)
         runtime.local_token_hashes.setdefault(normalized, set()).add(token_hash)
     return token
 
 
 async def _token_authorizes_room(room_id: str, token: str) -> bool:
+    return await _authorized_room_state(room_id, token) is not None
+
+
+async def _authorized_room_state(room_id: str, token: str) -> BackendState | None:
     runtime = _runtime()
     normalized = normalize_room_id(room_id)
     if runtime.room_store is not None:
         metadata = await runtime.room_store.get_metadata(normalized)
         room_instance_id = _metadata_room_instance_id(metadata)
         if room_instance_id is None:
-            return False
+            return None
         token_hash = _scoped_token_hash(token, room_instance_id)
-        resolved_room = await runtime.room_store.get_token_room_id(normalized, token_hash)
-        return resolved_room == normalized
+        return await runtime.room_store.authorize_token(
+            normalized,
+            room_instance_id,
+            token_hash,
+        )
     room_instance_id = runtime.local_room_instance_ids.get(normalized)
     if room_instance_id is None:
-        return False
+        return None
     token_hash = _scoped_token_hash(token, room_instance_id)
-    return token_hash in runtime.local_token_hashes.get(normalized, set())
+    if token_hash not in runtime.local_token_hashes.get(normalized, set()):
+        return None
+    return await get_room_state(normalized)
 
 
 def make_state() -> BackendState:
@@ -158,15 +172,15 @@ def get_room(room_id: str) -> Any | None:
 
 async def schedule_cleanup(room_id: str):
     runtime = _runtime()
-    await asyncio.sleep(runtime.ROOM_TTL)
     normalized = normalize_room_id(room_id)
     if runtime.room_store is not None:
-        _ = await runtime.room_store.expire_empty_room(
-            normalized,
-            has_connections=runtime.connections.has_connections(normalized),
-        )
+        # Presence is local to a worker, so it cannot safely authorize an eager
+        # Redis delete: another worker may still own a live socket. Connected
+        # and advancing rooms refresh their canonical TTL in the scheduler;
+        # abandoned rooms expire naturally and the registry prunes them.
         return
 
+    await asyncio.sleep(runtime.ROOM_TTL)
     room = runtime.rooms.get(normalized)
     if room and not room["clients"] and room["cleanup"] is asyncio.current_task():
         _ = runtime.rooms.pop(normalized, None)
@@ -209,6 +223,50 @@ async def save_room_state(room_id: str, state: BackendState) -> None:
     room = runtime.rooms.get(normalized)
     if room is not None:
         room["state"] = state
+
+
+async def mutate_room_state(room_id: str, msg: dict[str, object]) -> tuple[BackendState, bool] | None:
+    runtime = _runtime()
+    normalized = normalize_room_id(room_id)
+    if runtime.room_store is None:
+        state = await get_room_state(normalized)
+        if state is None:
+            return None
+        before = json.dumps(state, sort_keys=True)
+        await handle(state, msg)
+        changed = json.dumps(state, sort_keys=True) != before
+        if changed:
+            state["revision"] += 1
+            await save_room_state(normalized, state)
+        return state, changed
+
+    for _attempt in range(8):
+        state = await runtime.room_store.get_state(normalized)
+        if state is None:
+            return None
+        expected_revision = state["revision"]
+        current_slot = await runtime.room_store.current_time_slot()
+        advancing = state["break"] or (state["focus"] and not state["paused"])
+        previous_slot = state["last_tick_slot"]
+        reconciled = False
+        if advancing and previous_slot is not None:
+            elapsed_seconds = max(0, current_slot - previous_slot)
+            if elapsed_seconds:
+                reconciled = state_reducer.advance_timer_state(state, elapsed_seconds)
+            still_advancing = state["break"] or (state["focus"] and not state["paused"])
+            state["last_tick_slot"] = current_slot if still_advancing else None
+        before_message = json.dumps(state, sort_keys=True)
+        await handle(state, msg)
+        advancing = state["break"] or (state["focus"] and not state["paused"])
+        if advancing and state["last_tick_slot"] is None:
+            state["last_tick_slot"] = current_slot
+        changed = reconciled or json.dumps(state, sort_keys=True) != before_message
+        if not changed:
+            return state, False
+        state["revision"] = expected_revision + 1
+        if await runtime.room_store.compare_and_set_state(normalized, expected_revision, state):
+            return state, True
+    raise StateConflict("room state changed too frequently")
 
 
 def _build_event_bus() -> Any | None:

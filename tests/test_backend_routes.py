@@ -59,9 +59,10 @@ class FakeRedis:
     async def delete(self, *names: str) -> int:
         deleted = 0
         for name in names:
-            if name in self.values:
+            if name in self.values or name in self.sets:
                 deleted += 1
             self.values.pop(name, None)
+            self.sets.pop(name, None)
             self.ttls.pop(name, None)
         return deleted
 
@@ -80,6 +81,9 @@ class FakeRedis:
     async def smembers(self, name: str) -> builtins.set[str]:
         return set(self.sets.get(name, set()))
 
+    async def sismember(self, name: str, value: str) -> bool:
+        return value in self.sets.get(name, set())
+
     async def scard(self, name: str) -> int:
         return len(self.sets.get(name, set()))
 
@@ -93,6 +97,68 @@ class FakeRedis:
         next_value = current + 1
         self.values[name] = str(next_value)
         return next_value
+
+    async def eval(self, script: str, numkeys: int, *keys_and_args: object) -> object:
+        if numkeys == 4 and "AETHEL_CREATE_ROOM" in script:
+            (
+                index_key,
+                state_key,
+                metadata_key,
+                token_index_key,
+                room_id,
+                encoded_state,
+                encoded_metadata,
+                ttl,
+                max_rooms,
+            ) = (str(value) for value in keys_and_args)
+            if state_key in self.values or metadata_key in self.values:
+                return -1
+            rooms = self.sets.setdefault(index_key, set())
+            rooms.discard(room_id)
+            if len(rooms) >= int(max_rooms):
+                return -2
+            self.sets.pop(token_index_key, None)
+            self.values[state_key] = encoded_state
+            self.values[metadata_key] = encoded_metadata
+            self.ttls[state_key] = int(ttl)
+            self.ttls[metadata_key] = int(ttl)
+            rooms.add(room_id)
+            return 1
+        if numkeys == 3 and "AETHEL_ISSUE_ROOM_TOKEN" in script:
+            metadata_key, state_key, token_index_key, expected, token_hash, limit, ttl = (
+                str(value) for value in keys_and_args
+            )
+            encoded_metadata = self.values.get(metadata_key)
+            if encoded_metadata is None or state_key not in self.values:
+                return -1
+            if json.loads(encoded_metadata).get("room_instance_id") != expected:
+                return -1
+            tokens = self.sets.setdefault(token_index_key, set())
+            if token_hash not in tokens and len(tokens) >= int(limit):
+                return -2
+            tokens.add(token_hash)
+            self.ttls[state_key] = int(ttl)
+            self.ttls[metadata_key] = int(ttl)
+            self.ttls[token_index_key] = int(ttl)
+            return 1
+        if numkeys == 3 and "EXPIRE" in script:
+            state_key, metadata_key, token_index_key, ttl = (str(value) for value in keys_and_args)
+            if state_key not in self.values or metadata_key not in self.values:
+                return 0
+            self.ttls[state_key] = int(ttl)
+            self.ttls[metadata_key] = int(ttl)
+            if token_index_key in self.sets:
+                self.ttls[token_index_key] = int(ttl)
+            return 1
+        if numkeys == 1 and "SCARD" in script:
+            token_index_key, token_hash, limit, ttl = (str(value) for value in keys_and_args)
+            tokens = self.sets.setdefault(token_index_key, set())
+            if token_hash not in tokens and len(tokens) >= int(limit):
+                return 0
+            tokens.add(token_hash)
+            self.ttls[token_index_key] = int(ttl)
+            return 1
+        raise AssertionError(f"unexpected eval arguments: {keys_and_args!r}")
 
     async def publish(self, channel: str, message: str) -> int:
         self.published.append((channel, message))

@@ -16,6 +16,7 @@ frontend/dist/
 .omc/
 .codegraph/
 .omo/
+.img2threejs/
 
 # OS/editor noise
 .DS_Store

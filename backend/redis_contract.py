@@ -4,7 +4,7 @@ from typing import Final
 
 
 KEY_PREFIX: Final[str] = "aetheldesk"
-EVENT_VERSION: Final[int] = 1
+EVENT_VERSION: Final[int] = 2
 
 # Room ids become Redis key segments, so restrict them to a safe alphabet and
 # bounded length. This keeps user-supplied ids from injecting extra ":" key
@@ -33,6 +33,11 @@ def room_metadata_key(room_id: str) -> str:
 def room_token_key(room_id: str, token_hash: str) -> str:
     normalized = normalize_room_id(room_id)
     return f"{KEY_PREFIX}:room:{normalized}:token:{token_hash}"
+
+
+def room_token_index_key(room_id: str) -> str:
+    normalized = normalize_room_id(room_id)
+    return f"{KEY_PREFIX}:room:{normalized}:tokens"
 
 
 def room_pin_attempts_key(room_id: str, fingerprint: str) -> str:

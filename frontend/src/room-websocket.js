@@ -4,6 +4,7 @@ export function createRoomSocket({ roomId, connDot, connStatus, connCopy, auth, 
   let ws = null;
   let reconnectAttempt = 0;
   let reconnectTimer = null;
+  let connectionGeneration = 0;
 
   function wsUrl(token) {
     const scheme = location.protocol === "https:" ? "wss" : "ws";
@@ -31,9 +32,13 @@ export function createRoomSocket({ roomId, connDot, connStatus, connCopy, auth, 
     auth.hide();
     connStatus.textContent = "방 연결을 시도하고 있습니다.";
     if (connCopy) connCopy.textContent = "연결 중";
-    ws = new WebSocket(wsUrl(token));
+    const socket = new WebSocket(wsUrl(token));
+    const generation = ++connectionGeneration;
+    let firstSnapshot = true;
+    ws = socket;
 
-    ws.addEventListener("open", () => {
+    socket.addEventListener("open", () => {
+      if (socket !== ws) return;
       reconnectAttempt = 0;
       connDot.style.opacity = "0.35";
       connStatus.textContent = "방이 연결되었습니다. 함께 동기화 중입니다.";
@@ -48,16 +53,21 @@ export function createRoomSocket({ roomId, connDot, connStatus, connCopy, auth, 
       }).catch(() => {});
     });
 
-    ws.onmessage = event => {
+    socket.onmessage = event => {
+      if (socket !== ws) return;
       try {
         const payload = JSON.parse(event.data);
-        if (payload?.data) onState(payload.data);
+        if (payload?.data) {
+          onState(payload.data, { generation, firstSnapshot });
+          firstSnapshot = false;
+        }
       } catch (err) {
         console.warn("ws message parse failed", err);
       }
     };
 
-    ws.onclose = event => {
+    socket.onclose = event => {
+      if (socket !== ws) return;
       connDot.style.opacity = "0";
       if (event.code === 1008) {
         clearRoomToken(roomId);
@@ -73,7 +83,7 @@ export function createRoomSocket({ roomId, connDot, connStatus, connCopy, auth, 
       reconnectTimer = setTimeout(connect, delay);
     };
 
-    ws.onerror = () => { try { ws.close(); } catch {} };
+    socket.onerror = () => { try { socket.close(); } catch {} };
   }
 
   function reconnectNow() {

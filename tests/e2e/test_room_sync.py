@@ -75,15 +75,8 @@ def test_two_client_sync_reload_reconnect_and_scene(browser: Browser, live_serve
     expect(page_b).to_have_title(re.compile(r"2[45]:[0-5][0-9].*일시정지.*AethelDesk"))
     pause_b.click()
     expect(page_b).to_have_title(re.compile(r"2[45]:[0-5][0-9].*집중.*AethelDesk"))
-    expect(page_a.locator("#music-bar")).to_be_visible()
-    expect(page_a.locator("#btn-play")).to_be_visible()
-    page_a.locator("#btn-play").click()
-    expect(page_b.locator("#btn-pause")).to_be_visible()
-    expect(page_a.locator("#btn-pause")).to_be_visible()
-    page_a.locator("#btn-pause").click()
-    expect(page_b.locator("#btn-play")).to_be_visible()
-    expect(page_a.locator("#btn-skip")).to_be_visible()
-    page_a.locator("#btn-skip").click()
+    for page in (page_a, page_b):
+        expect(page.locator("#music-bar, #btn-add-track, #yt-frame")).to_have_count(0)
 
     page_b.reload(wait_until="domcontentloaded")
     expect(page_b.locator("#room-auth")).to_be_hidden()
@@ -122,7 +115,7 @@ def test_two_client_sync_reload_reconnect_and_scene(browser: Browser, live_serve
         "\n".join(
             [
                 f"room_id={room_id}",
-                "verified=focus_toggle_via_#focus-btn,duration_primary_cta,tab_title_focus_pause_reload_idle,persistent_music_play_pause_skip,time_override_reset,reload_state,reconnect_recovery,scene_picker_storage",
+                "verified=focus_toggle_via_#focus-btn,duration_primary_cta,tab_title_focus_pause_reload_idle,no_frontend_media_controls,time_override_reset,reload_state,reconnect_recovery,scene_picker_storage",
                 "screenshots=task-12-two-client-focus.png,task-12-reload-state.png",
             ]
         ),

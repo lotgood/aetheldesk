@@ -183,7 +183,7 @@ def test_four_three_desktop_keeps_time_dial_out_of_celestial_lane(browser: Brows
         "    const rect = document.querySelector(selector).getBoundingClientRect();"
         "    return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height };"
         "  };"
-        "  return { stage: box('body'), dial: box('#time-dial'), music: box('#music-bar'), action: box('#action-bar') };"
+        "  return { stage: box('body'), dial: box('#time-dial'), action: box('#action-bar') };"
         "}"
     )
 
@@ -191,11 +191,10 @@ def test_four_three_desktop_keeps_time_dial_out_of_celestial_lane(browser: Brows
     dial = geometry["dial"]
     assert dial["right"] < stage["left"] + stage["width"] * 0.3
     assert dial["bottom"] > stage["top"] + stage["height"] * 0.75
-    for control_name in ("music", "action"):
-        control = geometry[control_name]
-        horizontal_overlap = max(0, min(dial["right"], control["right"]) - max(dial["left"], control["left"]))
-        vertical_overlap = max(0, min(dial["bottom"], control["bottom"]) - max(dial["top"], control["top"]))
-        assert horizontal_overlap * vertical_overlap == 0
+    action = geometry["action"]
+    horizontal_overlap = max(0, min(dial["right"], action["right"]) - max(dial["left"], action["left"]))
+    vertical_overlap = max(0, min(dial["bottom"], action["bottom"]) - max(dial["top"], action["top"]))
+    assert horizontal_overlap * vertical_overlap == 0
     context.close()
 
 
@@ -233,30 +232,23 @@ def test_fullscreen_desktop_hud_lanes_do_not_overlap(
         "  const center = rect('#center-cluster');"
         "  const focus = rect('#focus-btn');"
         "  const dial = rect('#time-dial');"
-        "  const music = rect('#music-bar');"
         "  const action = rect('#action-bar');"
         "  const body = rect('body');"
         "  return {"
-        "    centerMusic: overlap(center, music),"
         "    centerAction: overlap(center, action),"
         "    dialCenter: overlap(dial, center),"
         "    dialFocus: overlap(dial, focus),"
-        "    dialMusic: overlap(dial, music),"
         "    dialAction: overlap(dial, action),"
-        "    musicAction: overlap(music, action),"
         "    bounds: [body.left, body.top, body.right, body.bottom],"
         "    scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight]"
         "  };"
         "}"
     )
 
-    assert metrics["centerMusic"] == 0
     assert metrics["centerAction"] == 0
     assert metrics["dialCenter"] == 0
     assert metrics["dialFocus"] == 0
-    assert metrics["dialMusic"] == 0
     assert metrics["dialAction"] == 0
-    assert metrics["musicAction"] == 0
     assert metrics["bounds"] == pytest.approx([0, 0, viewport["width"], viewport["height"]], abs=0.5)
     assert metrics["scroll"] == pytest.approx([viewport["width"], viewport["height"]], abs=0.5)
     context.close()
@@ -330,7 +322,7 @@ def test_short_landscape_lobby_footer_does_not_overlap_primary_cta(browser: Brow
 
 @pytest.mark.e2e
 @pytest.mark.parametrize("viewport", ({"width": 844, "height": 390}, {"width": 640, "height": 360}))
-def test_short_landscape_player_and_tools_share_one_clear_bottom_row(
+def test_short_landscape_tools_keep_one_clear_bottom_lane(
     browser: Browser,
     live_server: str,
     viewport: ViewportSize,
@@ -342,8 +334,6 @@ def test_short_landscape_player_and_tools_share_one_clear_bottom_row(
     page.locator("#btn-start").click()
     expect(page).to_have_url(re.compile(rf"{re.escape(live_server)}/room/[A-Z0-9]+"))
     expect(page.locator("#conn-copy")).to_have_text("연결됨")
-    expect(page.locator("#music-bar")).to_be_visible()
-
     metrics = page.evaluate(
         "() => {"
         "  const rect = selector => document.querySelector(selector).getBoundingClientRect();"
@@ -352,33 +342,41 @@ def test_short_landscape_player_and_tools_share_one_clear_bottom_row(
         "    const y = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));"
         "    return x * y;"
         "  };"
-        "  const music = rect('#music-bar');"
         "  const action = rect('#action-bar');"
         "  const dial = rect('#time-dial');"
         "  const focus = rect('#focus-btn');"
         "  return {"
-        "    musicAction: overlap(music, action),"
         "    dialControls: overlap(dial, rect('#controls')) ,"
         "    dialFocus: overlap(dial, focus),"
         "    focusTop: focus.top,"
-        "    musicRight: music.right,"
+        "    actionLeft: action.left,"
         "    actionRight: action.right"
         "  };"
         "}"
     )
 
-    assert metrics["musicAction"] == 0
     assert metrics["dialControls"] == 0
     assert metrics["dialFocus"] == 0
     assert metrics["focusTop"] >= 54
-    assert metrics["musicRight"] <= viewport["width"] + 0.5
+    assert metrics["actionLeft"] >= -0.5
     assert metrics["actionRight"] <= viewport["width"] + 0.5
     context.close()
 
 
 @pytest.mark.e2e
-def test_short_landscape_track_panel_and_touch_targets_stay_usable(browser: Browser, live_server: str) -> None:
-    viewport: ViewportSize = {"width": 844, "height": 390}
+@pytest.mark.parametrize(
+    "viewport",
+    (
+        {"width": 320, "height": 480},
+        {"width": 568, "height": 320},
+        {"width": 640, "height": 360},
+    ),
+)
+def test_short_break_ritual_and_dock_keep_separate_lanes(
+    browser: Browser,
+    live_server: str,
+    viewport: ViewportSize,
+) -> None:
     context = browser.new_context(viewport=viewport, has_touch=True, is_mobile=True, reduced_motion="reduce")
     page = context.new_page()
     page.goto(f"{live_server}/", wait_until="domcontentloaded")
@@ -387,61 +385,62 @@ def test_short_landscape_track_panel_and_touch_targets_stay_usable(browser: Brow
     expect(page).to_have_url(re.compile(rf"{re.escape(live_server)}/room/[A-Z0-9]+"))
     expect(page.locator("#conn-copy")).to_have_text("연결됨")
 
-    page.locator("#btn-add-track").click()
-    expect(page.locator("#track-row")).to_be_visible()
-    expect(page.locator("#track-input")).to_be_focused()
-
-    metrics = page.evaluate(
-        "() => {"
-        "  const rect = selector => document.querySelector(selector).getBoundingClientRect().toJSON();"
-        "  const track = rect('#track-row');"
-        "  const input = rect('#track-input');"
-        "  const add = rect('#track-add');"
-        "  const cancel = rect('#track-cancel');"
-        "  const trackEl = document.getElementById('track-row');"
-        "  const trackStyle = getComputedStyle(trackEl);"
-        "  const inputStyle = getComputedStyle(document.getElementById('track-input'));"
-        "  const addStyle = getComputedStyle(document.getElementById('track-add'));"
-        "  const centerHidden = document.getElementById('center-cluster').closest('[aria-hidden=\"true\"],[inert]') !== null;"
-        "  const actionHidden = document.getElementById('action-bar').closest('[aria-hidden=\"true\"],[inert]') !== null;"
-        "  return {"
-        "    track, input, add, cancel, centerHidden, actionHidden,"
-        "    activeId: document.activeElement?.id,"
-        "    rowBackground: trackStyle.backgroundImage,"
-        "    rowBorder: trackStyle.borderTopWidth,"
-        "    rowShadow: trackStyle.boxShadow,"
-        "    rowBefore: getComputedStyle(trackEl, '::before').content,"
-        "    inputBackground: inputStyle.backgroundImage,"
-        "    inputRadius: parseFloat(inputStyle.borderTopLeftRadius),"
-        "    addRadius: parseFloat(addStyle.borderTopLeftRadius)"
-        "  };"
-        "}"
+    page.evaluate(
+        """
+        () => {
+          document.body.classList.add('is-session');
+          document.body.dataset.mode = 'break';
+          document.body.dataset.restPhase = 'restore';
+          const show = id => {
+            const el = document.getElementById(id);
+            el.hidden = false;
+            el.removeAttribute('inert');
+            el.setAttribute('aria-hidden', 'false');
+            el.style.opacity = '1';
+            el.style.pointerEvents = 'auto';
+          };
+          show('pomodoro');
+          show('rest-ritual');
+          show('rest-recovery-options');
+          show('break-row');
+          document.getElementById('focus-row').style.opacity = '0';
+        }
+        """
     )
 
-    assert metrics["track"]["x"] >= -0.5
-    assert metrics["track"]["x"] + metrics["track"]["width"] <= viewport["width"] + 0.5
-    assert metrics["track"]["width"] >= 320
-    assert metrics["input"]["width"] >= 180
-    assert metrics["add"]["width"] >= 44 and metrics["add"]["height"] >= 44
-    assert metrics["cancel"]["width"] >= 44 and metrics["cancel"]["height"] >= 44
-    assert metrics["centerHidden"] is True
-    assert metrics["actionHidden"] is True
-    assert metrics["activeId"] == "track-input"
-    assert metrics["rowBackground"] == "none"
-    assert metrics["rowBorder"] == "0px"
-    assert metrics["rowShadow"] == "none"
-    assert metrics["rowBefore"] == "none"
-    assert metrics["inputBackground"] != "none"
-    assert metrics["inputRadius"] > 0
-    assert metrics["addRadius"] > 0
+    metrics = page.evaluate(
+        """
+        () => {
+          const rect = selector => document.querySelector(selector).getBoundingClientRect();
+          const overlap = (a, b) => {
+            const x = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+            const y = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+            return x * y;
+          };
+          const viewportRect = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
+          const ritual = rect('#rest-ritual');
+          const breakRow = rect('#break-row');
+          const action = rect('#action-bar');
+          const timer = rect('#pom-time');
+          const inBounds = value => value.left >= -0.5 && value.top >= -0.5
+            && value.right <= innerWidth + 0.5 && value.bottom <= innerHeight + 0.5;
+          return {
+            ritualDock: overlap(ritual, action),
+            breakDock: overlap(breakRow, action),
+            timerRitual: overlap(timer, ritual),
+            bounds: [inBounds(ritual), inBounds(breakRow), inBounds(action), inBounds(timer)],
+            scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
+            viewport: viewportRect,
+          };
+        }
+        """
+    )
 
-    page.locator("#track-input").press("Escape")
-    expect(page.locator("#track-row")).to_be_hidden()
-    expect(page.locator("#track-row")).to_have_attribute("aria-hidden", "true")
-    expect(page.locator("#btn-add-track")).to_be_focused()
-    assert page.locator("#track-row").get_attribute("inert") == ""
-    assert page.locator("#action-bar").get_attribute("aria-hidden") is None
-    assert page.locator("#action-bar").get_attribute("inert") is None
+    assert metrics["ritualDock"] == 0
+    assert metrics["breakDock"] == 0
+    assert metrics["timerRitual"] == 0
+    assert metrics["bounds"] == [True, True, True, True]
+    assert metrics["scroll"] == pytest.approx([viewport["width"], viewport["height"]], abs=0.5)
     context.close()
 
 
@@ -523,7 +522,7 @@ def test_status_toast_stays_in_non_control_lane(
         "  };"
         "  const toast = rect('#room-status');"
         "  const dial = rect('#time-dial');"
-        "  const music = rect('#music-bar');"
+        "  const action = rect('#action-bar');"
         '  const interactiveOverlap = [...document.querySelectorAll(\'button,input,select,a,[role="button"],[tabindex]:not([tabindex="-1"])\')]'
         "    .map(el => {"
         "      const itemRect = el.getBoundingClientRect();"
@@ -540,7 +539,7 @@ def test_status_toast_stays_in_non_control_lane(
         "    toastTop: toast.top,"
         "    toastRight: toast.right,"
         "    toastText: document.getElementById('room-status').innerText,"
-        "    dialMusicOverlap: overlap(dial, music),"
+        "    dialActionOverlap: overlap(dial, action),"
         "    interactiveOverlap"
         "  };"
         "}"
@@ -550,7 +549,7 @@ def test_status_toast_stays_in_non_control_lane(
     assert 0 < metrics["toastTop"] < viewport["height"]
     assert metrics["toastRight"] <= viewport["width"] + 0.5
     assert metrics["interactiveOverlap"] == []
-    assert metrics["dialMusicOverlap"] == 0
+    assert metrics["dialActionOverlap"] == 0
     context.close()
 
 

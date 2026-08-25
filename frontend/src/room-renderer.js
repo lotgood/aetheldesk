@@ -235,7 +235,13 @@ export function createRoomRenderer({ sceneController, container = document.body 
       setHiddenInteraction(focusRow, true);
       const minuteBucket = Math.ceil(breakRemaining / 60);
       announce(`break-${minuteBucket}`, `휴식 중입니다. 약 ${minuteBucket}분 남았습니다.`);
-      if (shouldMoveFocus) setTimeout(() => skipBreakBtn.focus(), 120);
+      if (shouldMoveFocus) {
+        setTimeout(() => {
+          const restTitle = byId("rest-title");
+          const titleIsAvailable = restTitle && !restTitle.closest("[hidden], [inert]");
+          (titleIsAvailable ? restTitle : skipBreakBtn).focus();
+        }, 120);
+      }
     } else {
       const shouldMoveFocus = pom.contains(activeEl);
       btn.style.opacity = "1"; btn.style.pointerEvents = "auto";
@@ -261,7 +267,7 @@ export function createRoomRenderer({ sceneController, container = document.body 
     const active = state.focus
       ? { remain: state.pomodoro_remaining, total: state.pomodoro_duration }
       : state.break
-        ? { remain: state.break_remaining, total: state.sessions_done % 4 === 0 ? 1500 : 600 }
+        ? { remain: state.break_remaining, total: state.break_duration }
         : null;
     if (ring) {
       if (active && active.total > 0) {
@@ -293,7 +299,12 @@ export function createRoomRenderer({ sceneController, container = document.body 
     const el = byId("sessions");
     if (!el) return;
     el.textContent = "";
-    el.setAttribute("aria-label", count === 0 ? "완료한 집중 세션 없음" : `완료한 집중 세션 ${count}회`);
+    const position = count % 4 || (count > 0 ? 4 : 0);
+    el.dataset.cycleProgress = String(position);
+    el.setAttribute(
+      "aria-label",
+      count === 0 ? "완료한 집중 세션 없음" : `완료한 집중 세션 ${count}회, 현재 주기 ${position}/4`,
+    );
     if (count === 0) {
       const empty = document.createElement("span");
       empty.className = "session-dot empty";
@@ -301,7 +312,6 @@ export function createRoomRenderer({ sceneController, container = document.body 
       el.appendChild(empty);
       return;
     }
-    const position = count % 4 || 4;
     for (let i = 0; i < 4; i++) {
       const dot = document.createElement("span");
       dot.className = "session-dot" + (i < position ? "" : " empty");

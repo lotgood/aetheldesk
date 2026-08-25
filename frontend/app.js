@@ -1,12 +1,12 @@
 import { createSceneController } from "./scenes.js";
 import { byId, createFocusTrap, setHiddenInteraction, setModalIsolation } from "./src/dom.js";
 import { createDisplaySettings } from "./src/display-settings.js";
-import { createMusicController } from "./src/music-youtube.js";
 import { createRoomAuth } from "./src/room-auth.js";
 import { createRoomRenderer, playChime, startClock, tickClock, tickDate } from "./src/room-renderer.js";
 import { createRoomSocket } from "./src/room-websocket.js";
+import { createRestRitual } from "./src/rest-ritual.js";
 import { createScenePicker } from "./src/scene-picker.js";
-import { createPlaylistState } from "./src/storage.js";
+import { migrateLegacyPlaylistStorage } from "./src/storage.js";
 import { createTimerControls } from "./src/timer-controls.js";
 
 const ROOM_ID = location.pathname.split("/").pop().toUpperCase();
@@ -27,8 +27,9 @@ byId("btn-copy-room").addEventListener("click", async () => {
   }
 });
 
-const playlist = createPlaylistState();
 let currentState = null;
+let acceptedRevision = null;
+migrateLegacyPlaylistStorage();
 
 const roomStatus = byId("room-status");
 let roomStatusTimer = null;
@@ -66,29 +67,36 @@ socket = createRoomSocket({
 });
 
 const timers = createTimerControls({ getState: () => currentState, send: msg => socket.send(msg) });
-const music = createMusicController({ playlist, getState: () => currentState, send: msg => socket.send(msg) });
+const restRitual = createRestRitual();
 const exitTrap = createFocusTrap(byId("exit-confirm"), {
   initialFocus: byId("btn-exit-no"),
   onCancel: closeExitConfirm,
 });
 
-function applyState(state) {
+function applyState(state, { firstSnapshot = false } = {}) {
+  if (firstSnapshot) acceptedRevision = null;
+  const revision = Number.isInteger(state?.revision) && state.revision >= 0 ? state.revision : null;
+  if (revision === null && acceptedRevision !== null) return;
+  if (revision !== null && acceptedRevision !== null && revision < acceptedRevision) return;
+  if (revision !== null) acceptedRevision = revision;
+
+  const hadState = currentState !== null;
   const prevBreak = currentState?.break;
   currentState = state;
 
-  if (!prevBreak && state.break) playChime();
-  if (prevBreak && !state.break) playChime();
-
-  const playlistIndex = playlist.ids.indexOf(state.music.video_id);
-  if (playlistIndex !== -1) playlist.index = playlistIndex;
-
   renderer.renderCelestial(state.celestial);
   renderer.renderFocus(state.focus, state.pomodoro_remaining, state.break, state.break_remaining, state.paused);
+  const restState = restRitual.update(state, { resetRewardBaseline: firstSnapshot });
+  if (restState.reveal || (hadState && prevBreak && !state.break)) playChime();
   renderer.renderSatellite(state);
   sceneController.updatePomodoro(state);
+  sceneController.updateReward({
+    completedSessions: restState.cycleProgress,
+    reveal: restState.reveal,
+    active: restState.isBreak,
+  });
   renderer.renderSessions(state.sessions_done);
   timers.updateDurChips(Math.round(state.pomodoro_duration / 60));
-  music.syncYT(state.music);
   timers.syncSlider(state);
   tickClock();
   tickDate();
@@ -152,4 +160,5 @@ window.addEventListener("aethel:panel-open", event => {
 });
 
 setHiddenInteraction(byId("exit-confirm"), true);
+window.addEventListener("pagehide", () => sceneController.destroy(), { once: true });
 socket.connect();

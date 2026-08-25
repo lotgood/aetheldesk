@@ -16,6 +16,14 @@ body.quiet-orbit {
   --stage-width: 100vw;
   --stage-height: 100vh;
   --room-edge: clamp(1rem, min(2.6vw, 4.622222vh), 2.5rem);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --room-top-edge: max(var(--room-edge), var(--safe-top));
+  --room-right-edge: max(var(--room-edge), var(--safe-right));
+  --room-bottom-edge: max(var(--room-edge), var(--safe-bottom));
+  --room-left-edge: max(var(--room-edge), var(--safe-left));
   position: relative;
   width: var(--stage-width);
   height: var(--stage-height);
@@ -110,11 +118,11 @@ body.day #room-auth .liquid-glass::before {
 #hud-tl,
 #hud-tr {
   z-index: 30;
-  top: var(--room-edge) !important;
+  top: var(--room-top-edge) !important;
 }
 
 #hud-tl {
-  left: var(--room-edge) !important;
+  left: var(--room-left-edge) !important;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -122,7 +130,7 @@ body.day #room-auth .liquid-glass::before {
 }
 
 #hud-tr {
-  right: var(--room-edge) !important;
+  right: var(--room-right-edge) !important;
   gap: .55rem !important;
 }
 
@@ -234,8 +242,8 @@ body.day #room-auth .liquid-glass::before {
 
 .status-toast {
   position: absolute;
-  top: calc(var(--room-edge) + 4.75rem);
-  right: var(--room-edge);
+  top: calc(var(--room-top-edge) + 4.75rem);
+  right: var(--room-right-edge);
   bottom: auto;
   left: auto;
   z-index: 45;
@@ -435,6 +443,172 @@ body[data-mode='paused'] #pom-progress { color: var(--mist); }
   box-shadow: 0 0 14px rgba(242,198,109,.45);
 }
 
+body[data-mode='break'] #pomodoro { gap: .85rem !important; }
+body[data-mode='break'] #pom-time { font-size: clamp(4.6rem, 10cqw, 7.5rem) !important; }
+
+#rest-ritual {
+  position: relative;
+  width: min(40rem, calc(100cqw - 2rem));
+  padding: .85rem .95rem .75rem !important;
+  display: grid;
+  gap: .65rem;
+  overflow: hidden;
+  border-radius: 1.2rem !important;
+  background: linear-gradient(150deg, rgba(17,28,48,.9), rgba(7,14,26,.87)) !important;
+  color: var(--moon-paper);
+  text-align: left;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 24px 70px -38px rgba(0,0,0,.92) !important;
+}
+
+#rest-ritual[hidden] { display: none !important; }
+
+.rest-ritual-header {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 2.8rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .75rem;
+}
+
+.rest-constellation-mark {
+  position: relative;
+  width: 2.8rem;
+  height: 2.8rem;
+  border: 1px solid rgba(242,198,109,.24);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(242,198,109,.09), transparent 66%);
+}
+
+.rest-constellation-mark::before {
+  content: '';
+  position: absolute;
+  inset: .55rem;
+  border: 1px solid rgba(212,220,241,.12);
+  transform: rotate(28deg);
+}
+
+.rest-constellation-mark i {
+  position: absolute;
+  z-index: 1;
+  width: .34rem;
+  height: .34rem;
+  border: 1px solid rgba(236,240,249,.4);
+  border-radius: 50%;
+  background: rgba(8,15,28,.88);
+  transform: translate(-50%, -50%);
+  transition: background .35s ease, border-color .35s ease, box-shadow .35s ease;
+}
+
+.rest-constellation-mark i:nth-child(1) { left: 28%; top: 34%; }
+.rest-constellation-mark i:nth-child(2) { left: 70%; top: 26%; }
+.rest-constellation-mark i:nth-child(3) { left: 76%; top: 70%; }
+.rest-constellation-mark i:nth-child(4) { left: 32%; top: 74%; }
+.rest-constellation-mark i.is-earned {
+  border-color: var(--solar-gold);
+  background: var(--solar-gold);
+  box-shadow: 0 0 .7rem rgba(242,198,109,.58);
+}
+
+.rest-ritual-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .08rem;
+}
+
+.rest-eyebrow {
+  color: var(--dusk-lilac);
+  font-size: .6rem;
+  font-weight: 750;
+  letter-spacing: .12em;
+}
+
+#rest-title {
+  color: var(--moon-paper);
+  font-size: .96rem;
+  font-weight: 720;
+  line-height: 1.25;
+  outline: none;
+}
+
+#rest-title:focus-visible {
+  border-radius: .25rem;
+  box-shadow: 0 0 0 3px rgba(117,213,230,.32);
+}
+
+#rest-description {
+  overflow: hidden;
+  color: var(--mist);
+  font-size: .69rem;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rest-cycle-progress {
+  min-width: 3.45rem;
+  color: var(--solar-gold);
+  font-size: .78rem;
+  font-weight: 760;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.rest-choice-group {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+}
+
+.rest-choice-group[hidden] { display: none !important; }
+
+.rest-choice {
+  min-height: 2.75rem;
+  padding: .52rem .78rem;
+  border: 1px solid rgba(224,232,250,.13);
+  border-radius: var(--radius-pill);
+  background: rgba(255,255,255,.025);
+  color: rgba(236,240,249,.78);
+  font-size: .71rem;
+  font-weight: 650;
+  transition: color .2s ease, background .2s ease, border-color .2s ease, opacity .2s ease;
+}
+
+.rest-choice:hover,
+.rest-choice:focus-visible {
+  border-color: rgba(117,213,230,.42);
+  color: var(--moon-paper);
+  outline: none;
+}
+
+.rest-choice:focus-visible { box-shadow: 0 0 0 3px rgba(117,213,230,.2); }
+.rest-choice[aria-pressed='true'] {
+  border-color: rgba(242,198,109,.48);
+  background: rgba(242,198,109,.13);
+  color: var(--solar-gold);
+}
+
+#rest-ritual[data-screen-away='true'] .rest-choice[aria-pressed='false'] { opacity: .45; }
+
+.rest-screen-away {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  color: rgba(212,220,238,.6);
+  font-size: .64rem;
+  line-height: 1.4;
+}
+
+body[data-rest-phase='reveal'] #rest-ritual { animation: rest-arrival .72s var(--ease) both; }
+
+@keyframes rest-arrival {
+  from { opacity: 0; transform: translateY(.45rem) scale(.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 #focus-row,
 #break-row {
   min-height: 3.25rem;
@@ -456,8 +630,8 @@ body[data-mode='paused'] #pom-progress { color: var(--mist); }
 
 /* Celestial time instrument */
 #time-dial {
-  left: var(--room-edge) !important;
-  bottom: var(--room-edge) !important;
+  left: var(--room-left-edge) !important;
+  bottom: var(--room-bottom-edge) !important;
   z-index: 31;
   color: var(--moon-paper);
 }
@@ -509,9 +683,11 @@ body[data-mode='paused'] #pom-progress { color: var(--mist); }
   box-shadow: 0 0 0 1px rgba(255,255,255,.32), 0 3px 12px rgba(0,0,0,.45) !important;
 }
 
-/* Bottom dock + ambient player */
+/* Bottom dock */
 #controls {
-  bottom: var(--room-edge) !important;
+  right: var(--safe-right) !important;
+  bottom: var(--room-bottom-edge) !important;
+  left: var(--safe-left) !important;
   z-index: 32;
   gap: .7rem !important;
   padding-inline: clamp(.75rem, 2cqw, 1.5rem) !important;
@@ -552,8 +728,7 @@ body[data-mode='paused'] #pom-progress { color: var(--mist); }
   background: rgba(242,198,109,.1);
 }
 
-.dock-button svg,
-.icon-button svg {
+.dock-button svg {
   width: 1.15rem;
   height: 1.15rem;
   fill: none;
@@ -569,65 +744,6 @@ body[data-mode='paused'] #pom-progress { color: var(--mist); }
   height: 2rem !important;
   opacity: .62;
 }
-
-#music-bar {
-  width: min(29rem, calc(100cqw - 2rem));
-  min-height: 3.6rem;
-  padding: .4rem .45rem .4rem .85rem !important;
-  justify-content: space-between;
-  gap: .75rem !important;
-  border-radius: 1.1rem !important;
-  background: linear-gradient(145deg, rgba(15,25,43,.92), rgba(7,14,26,.87));
-}
-
-.music-identity,
-.music-actions {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-}
-
-.music-identity { min-width: 0; gap: .55rem; }
-.music-actions { gap: .15rem; }
-
-.music-identity > span:last-child {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  text-align: left;
-}
-
-.music-identity strong {
-  color: var(--moon-paper);
-  font-size: .72rem;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.music-identity small {
-  overflow: hidden;
-  color: var(--mist);
-  font-size: .62rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.music-note { color: var(--solar-gold); font-size: 1.05rem; }
-
-.icon-button {
-  min-width: 2.6rem;
-  min-height: 2.6rem;
-  padding: .45rem !important;
-  justify-content: center;
-  border-radius: .75rem;
-  color: var(--mist) !important;
-}
-
-.icon-button > span { display: none; }
-.icon-button.primary-icon { color: var(--observatory-strong) !important; background: var(--solar-gold); }
-
-.eq { color: var(--aether-cyan); }
 
 /* Sheets and temporary rows */
 .orbit-panel,
@@ -800,51 +916,6 @@ body[data-mode='paused'] #pom-progress { color: var(--mist); }
 .fx-toggle span { font-size: .72rem; font-weight: 700; }
 .fx-toggle[aria-pressed='true'] { border-color: rgba(117,213,230,.35); background: rgba(117,213,230,.08); color: var(--aether-cyan); }
 
-#track-row {
-  position: relative;
-  z-index: 5;
-  width: min(38rem, calc(100cqw - 2rem));
-  min-height: 4.1rem;
-  padding: 0 !important;
-  align-items: center;
-  gap: .55rem;
-  flex-wrap: wrap;
-  color: var(--moon-paper);
-  background: none !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-  backdrop-filter: none !important;
-  overflow: visible;
-}
-
-#track-row::before { content: none !important; display: none !important; }
-
-#track-input {
-  flex: 1 1 14rem;
-  min-height: 2.75rem;
-  padding: .55rem .7rem !important;
-  border: 1px solid rgba(224,232,250,.16) !important;
-  border-radius: .72rem;
-  background: linear-gradient(155deg, rgba(18,29,49,.97), rgba(7,14,26,.96)) !important;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 16px 44px -28px rgba(0,0,0,.92);
-  color: var(--moon-paper) !important;
-}
-
-#track-input[aria-invalid='true'] {
-  border-color: var(--ember) !important;
-  box-shadow: 0 0 0 3px rgba(255,129,120,.13);
-}
-
-#track-error { flex: 1 1 100%; order: 5; color: var(--ember); }
-#track-add, #track-cancel { min-height: 2.75rem; padding-inline: .8rem !important; }
-#track-add {
-  border-radius: .72rem !important;
-  background: var(--solar-gold);
-  color: var(--observatory-strong) !important;
-}
-#track-cancel { border-radius: .72rem !important; }
-
 .orbit-confirm {
   width: min(30rem, calc(100cqw - 2rem));
   min-height: 5rem;
@@ -906,8 +977,7 @@ body.is-session #controls { opacity: .22 !important; }
 body.is-session #controls:hover,
 body.is-session #controls:focus-within { opacity: 1 !important; }
 
-body.panel-open #time-dial,
-body.panel-open #music-bar { opacity: 0 !important; pointer-events: none !important; }
+body.panel-open #time-dial { opacity: 0 !important; pointer-events: none !important; }
 
 @media (max-width: 920px) {
   body.quiet-orbit { --room-edge: .95rem; }
@@ -922,23 +992,21 @@ body.panel-open #music-bar { opacity: 0 !important; pointer-events: none !import
   .focus-btn { --focus-diameter: 15.5rem; }
   .focus-duration { font-size: 4rem; }
 
-  #time-dial { bottom: 9.4rem !important; }
+  #time-dial { bottom: max(5.5rem, calc(var(--safe-bottom) + 4.75rem)) !important; }
   #time-dial > .liquid-glass { min-width: 12.25rem !important; padding: .55rem .65rem !important; }
   #time-slider { width: 7.5rem !important; }
 
-  #controls { bottom: .75rem !important; gap: .5rem !important; }
-  #music-bar { min-height: 3.25rem; }
-  #action-bar { width: min(100%, 25rem); min-height: 3.75rem; }
+  #controls { bottom: max(.75rem, var(--safe-bottom)) !important; gap: .5rem !important; }
+  #action-bar { width: min(100%, 20rem); min-height: 3.75rem; }
   .dock-button { min-width: 0; flex: 1 1 0; min-height: 3rem; padding-inline: .35rem !important; }
 
   .orbit-panel,
   #display-panel,
-  #track-row,
   .orbit-confirm {
     position: fixed;
-    left: .75rem;
-    right: .75rem;
-    bottom: 5.35rem;
+    left: max(.75rem, var(--safe-left));
+    right: max(.75rem, var(--safe-right));
+    bottom: max(5.35rem, calc(var(--safe-bottom) + 4.6rem));
     width: auto;
     max-height: min(72vh, 34rem);
     overflow-y: auto;
@@ -951,8 +1019,8 @@ body.panel-open #music-bar { opacity: 0 !important; pointer-events: none !import
 @media (max-width: 600px) and (orientation: portrait) {
   .status-toast {
     top: auto;
-    right: var(--room-edge);
-    bottom: 9.25rem;
+    right: var(--room-right-edge);
+    bottom: max(9.25rem, calc(var(--safe-bottom) + 8.5rem));
     width: max-content;
     text-align: right;
     transform: none;
@@ -984,13 +1052,10 @@ body.panel-open #music-bar { opacity: 0 !important; pointer-events: none !import
   #pom-time { font-size: clamp(5.1rem, 25cqw, 7.4rem) !important; }
   #pomodoro { gap: 1.25rem !important; }
 
-  #time-dial { bottom: 9.2rem !important; }
+  #time-dial { bottom: 5.6rem !important; }
   #time-dial > .liquid-glass { min-width: 11.75rem !important; }
 
-  #music-bar { width: min(100%, 23rem); }
-  .music-identity small { display: none; }
-  .music-identity strong { max-width: 7rem; overflow: hidden; text-overflow: ellipsis; }
-  #action-bar { width: min(100%, 23rem); }
+  #action-bar { width: min(100%, 20rem); }
   .dock-button { font-size: .65rem !important; }
 }
 
@@ -1043,15 +1108,15 @@ body.panel-open #music-bar { opacity: 0 !important; pointer-events: none !import
 
   .status-toast {
     top: 3.65rem;
-    right: .65rem;
+    right: max(.65rem, var(--safe-right));
     bottom: auto;
   }
 
   #time-dial {
-    top: 4.1rem !important;
+    top: max(4.1rem, calc(var(--safe-top) + .45rem)) !important;
     right: auto !important;
     bottom: auto !important;
-    left: calc(50% - 7.5rem) !important;
+    left: max(var(--safe-left), calc(50% - 7.5rem)) !important;
     transform: none !important;
   }
   #time-dial > .liquid-glass {
@@ -1070,15 +1135,16 @@ body.panel-open #music-bar { opacity: 0 !important; pointer-events: none !import
   #time-dial > .liquid-glass > div:last-child > span { display: none; }
   #time-slider { width: 5rem !important; }
 
-  #controls { gap: .3rem !important; bottom: .45rem !important; }
-  #music-bar { min-height: 2.8rem; }
+  #controls { gap: .3rem !important; bottom: max(.45rem, var(--safe-bottom)) !important; }
   #action-bar { min-height: 3.35rem; }
   .dock-button { min-height: 2.7rem; }
 
   .orbit-panel,
   #display-panel,
-  #track-row,
-  .orbit-confirm { bottom: 4.5rem; max-height: calc(100cqh - 5.2rem); }
+  .orbit-confirm {
+    bottom: max(4.5rem, calc(var(--safe-bottom) + 3.85rem));
+    max-height: calc(100cqh - 5.2rem - var(--safe-top) - var(--safe-bottom));
+  }
 }
 
 /* At the 901px responsive seam a short desktop still uses the compact focus
@@ -1086,8 +1152,8 @@ body.panel-open #music-bar { opacity: 0 !important; pointer-events: none !import
    directly over the circle. Give wider short windows a left utility lane. */
 @container room-stage (min-width: 601px) and (max-height: 600px) {
   #time-dial {
-    top: 4.5rem !important;
-    left: .65rem !important;
+    top: max(4.5rem, calc(var(--safe-top) + .45rem)) !important;
+    left: max(.65rem, var(--safe-left)) !important;
   }
 }
 
@@ -1097,8 +1163,8 @@ body.panel-open #music-bar { opacity: 0 !important; pointer-events: none !import
   #time-dial {
     top: auto !important;
     right: auto !important;
-    bottom: var(--room-edge) !important;
-    left: var(--room-edge) !important;
+    bottom: var(--room-bottom-edge) !important;
+    left: var(--room-left-edge) !important;
     transform: none !important;
   }
 
@@ -1128,70 +1194,34 @@ body.panel-open #music-bar { opacity: 0 !important; pointer-events: none !import
   #dur-chips { transform: scale(.86); }
 
   .status-toast {
-    top: 3.95rem;
-    right: .7rem;
+    top: max(3.95rem, calc(var(--safe-top) + .4rem));
+    right: max(.7rem, var(--safe-right));
     bottom: auto;
     max-width: min(20rem, calc(100vw - 1.4rem));
   }
 
   #time-dial {
-    top: 4.25rem !important;
-    left: .65rem !important;
+    top: max(4.25rem, calc(var(--safe-top) + .35rem)) !important;
+    left: max(.65rem, var(--safe-left)) !important;
     bottom: auto !important;
     transform: none;
   }
   #time-dial > .liquid-glass { width: 13rem; }
   #controls {
-    right: .65rem !important;
-    bottom: .55rem !important;
+    right: max(.65rem, var(--safe-right)) !important;
+    bottom: max(.55rem, var(--safe-bottom)) !important;
     left: auto !important;
     width: auto;
     padding: 0 !important;
     flex-direction: row !important;
     align-items: flex-end !important;
   }
-  #music-bar {
-    position: static;
-    width: 9rem;
-    min-height: 3.35rem;
-    padding: .3rem .35rem !important;
-  }
-  #music-bar .music-identity { display: none; }
-  #music-bar .music-actions { width: 100%; justify-content: space-between; }
-  #action-bar { width: 22rem; }
-
-  body.track-panel-open #controls {
-    left: 0 !important;
-    right: 0 !important;
-    align-items: center !important;
-    width: auto !important;
-  }
-
-  body.track-panel-open #track-row {
-    width: min(34rem, calc(100vw - 1.5rem)) !important;
-    max-width: calc(100vw - 1.5rem);
-    flex-flow: row wrap !important;
-  }
-
-  body.track-panel-open #track-input {
-    flex: 1 0 100% !important;
-    width: 100% !important;
-    min-width: 0;
-  }
-}
-
-@media (pointer: coarse) and (min-width: 901px) and (orientation: landscape) {
-  #time-dial {
-    bottom: 11.4rem !important;
-  }
+  #action-bar { width: 19rem; }
 }
 
 @media (pointer: coarse), (max-width: 900px), (orientation: landscape) and (max-height: 480px) {
   .copy-room,
-  .icon-button,
-  #btn-reset-time,
-  #track-add,
-  #track-cancel {
+  #btn-reset-time {
     min-width: 2.75rem !important;
     min-height: 2.75rem !important;
   }
@@ -1218,7 +1248,6 @@ body.panel-open #music-bar { opacity: 0 !important; pointer-events: none !import
 @media (prefers-reduced-motion: reduce) {
   .focus-btn::after,
   #conn-dot,
-  .eq i,
   .t-colon.paused {
     animation: none !important;
   }
@@ -1236,8 +1265,103 @@ body.panel-open #music-bar { opacity: 0 !important; pointer-events: none !import
   .dock-button,
   .scene-option,
   .fx-toggle,
-  #quality-select,
-  #track-input {
+  #quality-select {
     border: 1px solid ButtonText !important;
   }
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+  body[data-mode='break'] #pomodoro { gap: .65rem !important; }
+  body[data-mode='break'] #pom-time { font-size: clamp(3.9rem, 20cqw, 5.4rem) !important; }
+
+  #rest-ritual {
+    width: calc(100cqw - 1.4rem);
+    padding: .72rem .75rem .65rem !important;
+    gap: .52rem;
+  }
+
+  .rest-ritual-header {
+    grid-template-columns: 2.35rem minmax(0, 1fr) auto;
+    gap: .55rem;
+  }
+
+  .rest-constellation-mark { width: 2.35rem; height: 2.35rem; }
+  #rest-title { font-size: .86rem; }
+  #rest-description { font-size: .64rem; white-space: normal; }
+  .rest-cycle-progress { min-width: 2.9rem; font-size: .7rem; }
+  .rest-choice-group { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .rest-choice { min-width: 0; padding-inline: .28rem; font-size: .63rem; white-space: nowrap; }
+  .rest-screen-away { font-size: .6rem; }
+}
+
+@media (orientation: landscape) and (max-height: 480px) {
+  body[data-mode='break'] #pomodoro {
+    width: min(42rem, calc(100cqw - 1.3rem - var(--safe-left) - var(--safe-right)));
+    display: grid;
+    grid-template-columns: minmax(8rem, .7fr) minmax(17rem, 1.3fr);
+    grid-template-areas:
+      'phase ritual'
+      'time ritual'
+      'track ritual'
+      'session ritual';
+    align-items: center;
+    column-gap: .75rem !important;
+    row-gap: .38rem !important;
+  }
+  body[data-mode='break'] .pom-phase { grid-area: phase; }
+  body[data-mode='break'] #pom-time { grid-area: time; }
+  body[data-mode='break'] #pom-progress-track { grid-area: track; width: 100%; }
+  body[data-mode='break'] #rest-ritual { grid-area: ritual; width: 100%; }
+  body[data-mode='break'] #pomodoro > .grid { grid-area: session; }
+  body[data-mode='break'] #pom-time { font-size: 3.55rem !important; }
+
+  #rest-ritual {
+    padding: .5rem .65rem !important;
+    gap: .38rem;
+    border-radius: .9rem !important;
+  }
+
+  .rest-ritual-header {
+    grid-template-columns: 2.2rem minmax(0, 1fr) auto;
+    gap: .5rem;
+  }
+
+  .rest-constellation-mark { width: 2.2rem; height: 2.2rem; }
+  #rest-title { font-size: .82rem; }
+  #rest-description { font-size: .61rem; }
+  .rest-cycle-progress { min-width: 2.75rem; font-size: .68rem; }
+  .rest-choice-group { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .3rem; }
+  .rest-choice { min-width: 0; padding: .42rem .3rem; font-size: .62rem; white-space: nowrap; }
+  .rest-screen-away { display: none; }
+}
+
+@container room-stage (max-width: 360px) and (max-height: 520px) {
+  body[data-mode='break'] #pomodoro {
+    top: max(.5rem, var(--safe-top));
+    right: max(.45rem, var(--safe-right));
+    bottom: max(4.75rem, calc(var(--safe-bottom) + 4.1rem));
+    left: max(.45rem, var(--safe-left));
+    width: auto;
+    gap: .38rem !important;
+    justify-content: center;
+  }
+
+  body[data-mode='break'] #pom-time { font-size: 3.45rem !important; }
+  body[data-mode='break'] #rest-ritual {
+    width: 100%;
+    padding: .55rem .6rem .5rem !important;
+    gap: .4rem;
+  }
+  body[data-mode='break'] .rest-screen-away { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #rest-ritual { animation: none !important; }
+  .rest-choice,
+  .rest-constellation-mark i { transition: none !important; }
+}
+
+@media (forced-colors: active) {
+  #rest-ritual,
+  .rest-choice { border: 1px solid ButtonText !important; }
 }

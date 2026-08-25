@@ -1,4 +1,3 @@
-import re
 from datetime import datetime, timezone
 from importlib import import_module
 from typing import Protocol, TypedDict, cast
@@ -14,15 +13,7 @@ _celestial_module = import_module("backend.celestial")
 
 get_celestial_state = cast(GetCelestialState, _celestial_module.get_celestial_state)
 
-YT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
-
-MusicState = TypedDict(
-    "MusicState",
-    {
-        "playing": bool,
-        "video_id": str,
-    },
-)
+BREAK_DURATION_SECONDS = 600
 
 
 BackendState = TypedDict(
@@ -35,8 +26,11 @@ BackendState = TypedDict(
         "pomodoro_duration": int,
         "break": bool,
         "break_remaining": int,
+        "break_duration": int,
         "sessions_done": int,
-        "music": MusicState,
+        "reward_id": int,
+        "revision": int,
+        "last_tick_slot": int | None,
         "time_override": str | None,
     },
 )
@@ -60,32 +54,76 @@ def make_state(celestial_provider: GetCelestialState | None = None) -> BackendSt
         "pomodoro_duration": 3000,
         "break": False,
         "break_remaining": 0,
+        "break_duration": BREAK_DURATION_SECONDS,
         "sessions_done": 0,
-        "music": {"playing": False, "video_id": "jfKfPfyJRdk"},
+        "reward_id": 0,
+        "revision": 0,
+        "last_tick_slot": None,
         "time_override": None,
     }
 
 
-def advance_timer_state(state: BackendState) -> bool:
-    needs_broadcast = False
+def normalize_state(state: dict[str, object]) -> BackendState:
+    """Upgrade an ephemeral pre-reward snapshot to the canonical state shape."""
+    state.pop("music", None)
+    state["break_duration"] = BREAK_DURATION_SECONDS
+    if state.get("break") is True and isinstance(state.get("break_remaining"), int):
+        state["break_remaining"] = max(
+            0,
+            min(cast(int, state["break_remaining"]), BREAK_DURATION_SECONDS),
+        )
+    reward_id = state.get("reward_id")
+    if not isinstance(reward_id, int) or isinstance(reward_id, bool) or reward_id < 0:
+        state["reward_id"] = 0
+    revision = state.get("revision")
+    if not isinstance(revision, int) or isinstance(revision, bool) or revision < 0:
+        state["revision"] = 0
+    last_tick_slot = state.get("last_tick_slot")
+    if not isinstance(last_tick_slot, int) or isinstance(last_tick_slot, bool):
+        state["last_tick_slot"] = None
+    return cast(BackendState, state)
 
-    if state["focus"] and not state["paused"] and state["pomodoro_remaining"] > 0:
-        state["pomodoro_remaining"] -= 1
-        needs_broadcast = True
-        if state["pomodoro_remaining"] == 0:
+
+def advance_timer_state(state: BackendState, seconds: int = 1) -> bool:
+    remaining_elapsed = max(0, seconds)
+    changed = False
+
+    while remaining_elapsed > 0:
+        if state["focus"] and not state["paused"]:
+            focus_step = min(remaining_elapsed, max(0, state["pomodoro_remaining"]))
+            if focus_step:
+                state["pomodoro_remaining"] -= focus_step
+                remaining_elapsed -= focus_step
+                changed = True
+            if state["pomodoro_remaining"] > 0:
+                break
+
             state["focus"] = False
+            state["paused"] = False
             state["sessions_done"] += 1
-            break_secs = 1500 if state["sessions_done"] % 4 == 0 else 600
+            state["reward_id"] += 1
+            state["break_duration"] = BREAK_DURATION_SECONDS
             state["break"] = True
-            state["break_remaining"] = break_secs
+            state["break_remaining"] = BREAK_DURATION_SECONDS
             state["pomodoro_remaining"] = state["pomodoro_duration"]
-    elif state["break"] and state["break_remaining"] > 0:
-        state["break_remaining"] -= 1
-        needs_broadcast = True
-        if state["break_remaining"] == 0:
-            state["break"] = False
+            changed = True
+            continue
 
-    return needs_broadcast
+        if state["break"]:
+            break_step = min(remaining_elapsed, max(0, state["break_remaining"]))
+            if break_step:
+                state["break_remaining"] -= break_step
+                remaining_elapsed -= break_step
+                changed = True
+            if state["break_remaining"] > 0:
+                break
+            state["break"] = False
+            changed = True
+            continue
+
+        break
+
+    return changed
 
 
 async def handle(
@@ -107,32 +145,33 @@ async def handle(
         state["focus"] = not state["focus"]
         state["paused"] = False
         state["pomodoro_remaining"] = state["pomodoro_duration"]
+        state["last_tick_slot"] = None
     elif t == "focus_pause":
         if state["focus"]:
             state["paused"] = not state["paused"]
+            state["last_tick_slot"] = None
     elif t == "focus_cancel":
         state["focus"] = False
         state["paused"] = False
         state["break"] = False
         state["break_remaining"] = 0
         state["pomodoro_remaining"] = state["pomodoro_duration"]
+        state["last_tick_slot"] = None
     elif t == "set_duration":
         mins = msg.get("minutes")
         if isinstance(mins, int) and 1 <= mins <= 120:
             state["pomodoro_duration"] = mins * 60
             if not state["focus"]:
                 state["pomodoro_remaining"] = state["pomodoro_duration"]
+                state["last_tick_slot"] = None
     elif t == "skip_break":
-        state["break"] = False
-        state["break_remaining"] = 0
-    elif t == "music_play":
-        state["music"]["playing"] = True
-    elif t == "music_pause":
-        state["music"]["playing"] = False
-    elif t == "music_skip":
-        vid = msg.get("video_id")
-        if isinstance(vid, str) and YT_ID_RE.match(vid):
-            state["music"]["video_id"] = vid
+        if state["break"]:
+            state["focus"] = False
+            state["paused"] = False
+            state["break"] = False
+            state["break_remaining"] = 0
+            state["pomodoro_remaining"] = state["pomodoro_duration"]
+            state["last_tick_slot"] = None
     elif t == "location":
         lat, lon = msg.get("lat"), msg.get("lon")
         if not (isinstance(lat, (int, float)) and isinstance(lon, (int, float))):

@@ -20,6 +20,7 @@ class FakeRedis:
         self.values: dict[str, str] = {}
         self.sets: dict[str, builtins.set[str]] = {}
         self.ttls: dict[str, int] = {}
+        self.recreate_before_issue: tuple[str, str] | None = None
 
     async def get(self, name: str) -> str | None:
         return self.values.get(name)
@@ -41,9 +42,10 @@ class FakeRedis:
     async def delete(self, *names: str) -> int:
         deleted = 0
         for name in names:
-            if name in self.values:
+            if name in self.values or name in self.sets:
                 deleted += 1
             self.values.pop(name, None)
+            self.sets.pop(name, None)
             self.ttls.pop(name, None)
         return deleted
 
@@ -62,6 +64,9 @@ class FakeRedis:
     async def smembers(self, name: str) -> builtins.set[str]:
         return set(self.sets.get(name, set()))
 
+    async def sismember(self, name: str, value: str) -> bool:
+        return value in self.sets.get(name, set())
+
     async def scard(self, name: str) -> int:
         return len(self.sets.get(name, set()))
 
@@ -73,6 +78,96 @@ class FakeRedis:
         next_value = current + 1
         self.values[name] = str(next_value)
         return next_value
+
+    async def eval(self, script: str, numkeys: int, *keys_and_args: object) -> object:
+        if numkeys == 4 and "AETHEL_CREATE_ROOM" in script:
+            (
+                index_key,
+                state_key,
+                metadata_key,
+                token_index_key,
+                room_id,
+                encoded_state,
+                encoded_metadata,
+                ttl,
+                max_rooms,
+            ) = (str(value) for value in keys_and_args)
+            if state_key in self.values or metadata_key in self.values:
+                return -1
+            rooms = self.sets.setdefault(index_key, set())
+            rooms.discard(room_id)
+            if len(rooms) >= int(max_rooms):
+                return -2
+            self.sets.pop(token_index_key, None)
+            self.values[state_key] = encoded_state
+            self.values[metadata_key] = encoded_metadata
+            self.ttls[state_key] = int(ttl)
+            self.ttls[metadata_key] = int(ttl)
+            rooms.add(room_id)
+            return 1
+        if numkeys == 4 and "AETHEL_AUTHORIZE_ROOM_TOKEN" in script:
+            metadata_key, state_key, token_index_key, legacy_key, expected, token_hash, room_id, ttl, limit = (
+                str(value) for value in keys_and_args
+            )
+            encoded_metadata = self.values.get(metadata_key)
+            encoded_state = self.values.get(state_key)
+            if encoded_metadata is None or encoded_state is None:
+                return None
+            if json.loads(encoded_metadata).get("room_instance_id") != expected:
+                return None
+            tokens = self.sets.setdefault(token_index_key, set())
+            if token_hash not in tokens:
+                if self.values.get(legacy_key) != room_id:
+                    return None
+                if len(tokens) >= int(limit):
+                    return None
+                tokens.add(token_hash)
+                await self.delete(legacy_key)
+            self.ttls[state_key] = int(ttl)
+            self.ttls[metadata_key] = int(ttl)
+            self.ttls[token_index_key] = int(ttl)
+            return encoded_state
+        if numkeys == 3 and "AETHEL_ISSUE_ROOM_TOKEN" in script:
+            metadata_key, state_key, token_index_key, expected, token_hash, limit, ttl = (
+                str(value) for value in keys_and_args
+            )
+            if self.recreate_before_issue is not None:
+                encoded_state, encoded_metadata = self.recreate_before_issue
+                self.recreate_before_issue = None
+                self.values[state_key] = encoded_state
+                self.values[metadata_key] = encoded_metadata
+                self.sets[token_index_key] = set()
+            encoded_metadata = self.values.get(metadata_key)
+            if encoded_metadata is None or state_key not in self.values:
+                return -1
+            if json.loads(encoded_metadata).get("room_instance_id") != expected:
+                return -1
+            tokens = self.sets.setdefault(token_index_key, set())
+            if token_hash not in tokens and len(tokens) >= int(limit):
+                return -2
+            tokens.add(token_hash)
+            self.ttls[state_key] = int(ttl)
+            self.ttls[metadata_key] = int(ttl)
+            self.ttls[token_index_key] = int(ttl)
+            return 1
+        if numkeys == 3 and "EXPIRE" in script:
+            state_key, metadata_key, token_index_key, ttl = (str(value) for value in keys_and_args)
+            if state_key not in self.values or metadata_key not in self.values:
+                return 0
+            self.ttls[state_key] = int(ttl)
+            self.ttls[metadata_key] = int(ttl)
+            if token_index_key in self.sets:
+                self.ttls[token_index_key] = int(ttl)
+            return 1
+        if numkeys == 1 and "SCARD" in script:
+            token_index_key, token_hash, limit, ttl = (str(value) for value in keys_and_args)
+            tokens = self.sets.setdefault(token_index_key, set())
+            if token_hash not in tokens and len(tokens) >= int(limit):
+                return 0
+            tokens.add(token_hash)
+            self.ttls[token_index_key] = int(ttl)
+            return 1
+        raise AssertionError(f"unexpected eval arguments: {keys_and_args!r}")
 
 
 @pytest.fixture
@@ -253,3 +348,39 @@ def test_recreated_redis_room_rejects_token_from_previous_instance(room_store_fi
         with client.websocket_connect(f"/ws/REUSE?token={current_token}") as websocket:
             payload = websocket.receive_json()
         assert payload["type"] == "state"
+
+
+@pytest.mark.parametrize("route_kind", ["join", "existing-create"])
+def test_pin_verified_for_old_generation_cannot_issue_new_generation_token(
+    room_store_fixture: tuple[Any, FakeRedis],
+    route_kind: str,
+):
+    backend_main, redis = room_store_fixture
+
+    with TestClient(backend_main.app) as client:
+        created = client.post("/api/rooms", json={"room_id": "PINRACE", "pin": "2468"})
+        assert created.status_code == 200
+
+        new_state = backend_main.make_state()
+        new_metadata = {
+            "room_id": "PINRACE",
+            "pin_hash": auth.hash_pin("9999"),
+            "room_instance_id": "new-generation",
+        }
+        redis.recreate_before_issue = (
+            json.dumps(new_state, separators=(",", ":")),
+            json.dumps(new_metadata, separators=(",", ":")),
+        )
+
+        if route_kind == "join":
+            raced = client.post("/api/rooms/PINRACE/join", json={"pin": "2468"})
+        else:
+            raced = client.post("/api/rooms", json={"room_id": "PINRACE", "pin": "2468"})
+
+        assert raced.status_code == 401
+        assert raced.json() == {"detail": "authentication failed"}
+        assert "token" not in raced.json()
+
+        current = client.post("/api/rooms/PINRACE/join", json={"pin": "9999"})
+        assert current.status_code == 200
+        assert current.json()["token"]

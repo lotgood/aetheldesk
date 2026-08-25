@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#070a12" />
   <meta name="description" content="같은 하늘 아래 함께 집중하는 실시간 포모도로 방" />
   <title>AethelDesk</title>
@@ -193,7 +193,7 @@
     .pom-ctl:hover { color: hsl(var(--foreground)); background: rgba(255,255,255,0.04); }
 
     /* ──────────────────────────────────────────────────────────────
-       Music + ··· controls
+       Room controls
        ────────────────────────────────────────────────────────────── */
     .ctrl-bar {
       display: inline-flex;
@@ -229,17 +229,6 @@
       width: 1px; height: 14px;
       background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.20), transparent);
     }
-
-    #track-input {
-      user-select: text; -webkit-user-select: text;
-      font-family: var(--font-body);
-      font-size: 12px;
-      letter-spacing: 0.04em;
-      color: hsl(var(--foreground));
-      border-color: rgba(255,255,255,0.22) !important;
-    }
-    #track-input::placeholder { color: rgba(255,255,255,0.40); }
-    #track-modal { transition: opacity 0.2s ease; }
 
     /* Display settings popover: wraps on narrow screens, pressed state
        dims the toggle instead of hiding it. */
@@ -307,27 +296,6 @@
       to { opacity: 0.25; }
     }
 
-    /* Music equalizer — three bars bouncing while a track plays */
-    .eq {
-      display: inline-flex;
-      align-items: flex-end;
-      gap: 2px;
-      height: 10px;
-    }
-    .eq i {
-      width: 2px;
-      height: 4px;
-      background: currentColor;
-      border-radius: 1px;
-      animation: eq-bounce 1s ease-in-out infinite;
-    }
-    .eq i:nth-child(2) { animation-delay: 0.18s; }
-    .eq i:nth-child(3) { animation-delay: 0.36s; }
-    @keyframes eq-bounce {
-      0%, 100% { height: 4px; }
-      50%      { height: 10px; }
-    }
-
     /* ──────────────────────────────────────────────────────────────
        Connection dot — gentle breathing pulse
        ────────────────────────────────────────────────────────────── */
@@ -366,13 +334,6 @@
     }
     body.day input[type=range]::-webkit-slider-thumb { background: rgba(15,25,45,0.95); box-shadow: 0 0 0 1px rgba(255,255,255,0.5), 0 2px 6px rgba(0,0,0,0.15); }
     body.day input[type=range]::-webkit-slider-runnable-track { background: rgba(15,25,45,0.22); }
-
-    /* Track input inherits white ink by default; invert it in daylight. */
-    body.day #track-input {
-      color: var(--day-ink);
-      border-color: rgba(15,25,45,0.35) !important;
-    }
-    body.day #track-input::placeholder { color: rgba(15,25,45,0.45); }
 
     /* The bare date label needs more presence over a bright sky. */
     body.day #date-label { opacity: 0.95; color: rgba(15,25,45,0.75); }
@@ -462,11 +423,6 @@
       display: none;
     }
 
-    /* Music bar: hidden by default, revealed by JS when user adds a track */
-    #music-bar {
-      opacity: 0; pointer-events: none; transform: translateY(6px);
-      transition: opacity .4s ease, transform .4s var(--ease);
-    }
     #controls:focus-within { opacity: 1 !important; }
 
     @media (prefers-reduced-motion: reduce) {
@@ -719,18 +675,50 @@
     <span id="pom-time">50:00</span>
 
     <!-- Session progress line — drains as the timer runs -->
-    <div class="relative w-72 h-px rounded-full" aria-hidden="true"
+    <div id="pom-progress-track" class="relative w-72 h-px rounded-full" aria-hidden="true"
       style="background: rgba(255,255,255,0.10);">
       <div id="pom-progress" class="absolute inset-y-0 left-0 rounded-full bg-current"
         style="width:100%; opacity:0.55;"></div>
     </div>
+
+    <section id="rest-ritual" class="liquid-glass" role="region"
+      aria-labelledby="rest-title" aria-describedby="rest-description rest-screen-away"
+      aria-hidden="true" inert hidden data-phase="inactive" data-progress="0">
+      <div class="rest-ritual-header">
+        <span class="rest-constellation-mark" aria-hidden="true">
+          <i data-rest-star="1"></i><i data-rest-star="2"></i>
+          <i data-rest-star="3"></i><i data-rest-star="4"></i>
+        </span>
+        <span class="rest-ritual-copy">
+          <span id="rest-eyebrow" class="rest-eyebrow">집중 완료</span>
+          <strong id="rest-title" tabindex="-1">50분 집중을 완성했어요</strong>
+          <span id="rest-description">이제 화면을 잠시 떠나도 좋아요.</span>
+        </span>
+        <output id="rest-cycle-progress" class="rest-cycle-progress" aria-label="현재 집중 주기 0/4">0 / 4</output>
+      </div>
+
+      <div id="rest-recovery-options" class="rest-choice-group" role="group" aria-label="선택 사항인 회복 방법" hidden aria-hidden="true" inert>
+        <button type="button" class="rest-choice" data-rest-choice="eyes" aria-pressed="false">눈 쉬기</button>
+        <button type="button" class="rest-choice" data-rest-choice="water" aria-pressed="false">물 마시기</button>
+        <button type="button" class="rest-choice" data-rest-choice="breathe" aria-pressed="false">짧게 호흡하기</button>
+      </div>
+
+      <div id="rest-intent-options" class="rest-choice-group rest-intent-group" role="group" aria-label="선택 사항인 다음 집중 방향" hidden aria-hidden="true" inert>
+        <button type="button" class="rest-choice" data-next-intent="continue" aria-pressed="false">같은 일 계속</button>
+        <button type="button" class="rest-choice" data-next-intent="next" aria-pressed="false">다음 한 가지</button>
+        <button type="button" class="rest-choice" data-next-intent="finish" aria-pressed="false">오늘 마침</button>
+      </div>
+
+      <p id="rest-screen-away" class="rest-screen-away">원한다면 하나만 고른 뒤, 화면을 보지 않고 쉬세요.</p>
+      <p id="rest-live" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
+    </section>
 
     <div class="grid place-items-center">
       <div id="break-row"
         class="col-start-1 row-start-1 opacity-0 pointer-events-none flex items-center gap-3 px-4 py-1.5 rounded-full liquid-glass" aria-hidden="true" inert>
         <span class="pom-ctl" style="color:hsl(var(--foreground));">휴식</span>
         <span class="ctrl-sep"></span>
-        <button id="btn-skip-break" class="pom-ctl">건너뛰기 →</button>
+        <button id="btn-skip-break" class="pom-ctl" aria-label="휴식 건너뛰기">건너뛰기 →</button>
       </div>
       <div id="focus-row"
         class="col-start-1 row-start-1 opacity-0 pointer-events-none flex items-center gap-3 px-4 py-1.5 rounded-full liquid-glass" aria-hidden="true" inert>
@@ -778,41 +766,9 @@
 
   <!-- ─────────────────────────────────────────────────────────────
        CONTROLS: bottom-center
-       Stack (bottom → top): action-bar · exit-confirm · track-row · music-bar
+       Stack (bottom → top): action-bar · temporary panels
        ───────────────────────────────────────────────────────────── -->
   <div id="controls" class="absolute bottom-7 left-0 right-0 px-6 flex flex-col gap-2 items-center z-20 animate-fade-rise-delay-3">
-
-    <!-- Persistent ambient player -->
-    <div id="music-bar" class="ctrl-bar liquid-glass" aria-hidden="true" inert>
-      <div class="music-identity">
-        <span id="eq" class="eq hidden" aria-hidden="true"><i></i><i></i><i></i></span>
-        <span class="music-note" aria-hidden="true">♪</span>
-        <span><strong>Aethel Radio</strong><small>집중을 위한 앰비언트</small></span>
-      </div>
-      <div class="music-actions">
-        <button id="btn-pause" class="ctrl-btn icon-button" aria-label="음악 일시정지">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6v12M15 6v12" /></svg><span>일시정지</span>
-        </button>
-        <button id="btn-play" class="ctrl-btn icon-button primary-icon" aria-label="음악 재생">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 7 8 5-8 5V7Z" /></svg><span>재생</span>
-        </button>
-        <button id="btn-skip" class="ctrl-btn icon-button" aria-label="다음 음악으로 넘기기">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 7 5-7 5V7Zm8 0v10" /></svg><span>다음</span>
-        </button>
-      </div>
-    </div>
-
-    <!-- Track input: shown when + 트랙 tapped -->
-    <div id="track-row" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="track-title" aria-hidden="true" inert tabindex="-1">
-      <label id="track-title" for="track-input" class="sr-only">음악 트랙 YouTube 링크 또는 영상 ID</label>
-      <input id="track-input" type="text" inputmode="url" autocomplete="off" spellcheck="false"
-              placeholder="YouTube URL 또는 영상 ID"
-              aria-describedby="track-error" />
-      <span id="track-error" class="ui-label min-w-0" role="status" aria-live="polite" aria-atomic="true" style="opacity:0.7;"></span>
-      <button id="track-add" class="ctrl-btn">추가</button>
-      <span class="ctrl-sep"></span>
-      <button id="track-cancel" class="ctrl-btn" style="opacity:0.6;">취소</button>
-    </div>
 
     <!-- Exit confirmation: shown when timer active + 나가기 tapped -->
     <div id="exit-confirm" class="ctrl-bar liquid-glass orbit-confirm" role="alertdialog" aria-modal="true" aria-labelledby="exit-confirm-title" style="display:none;" aria-hidden="true" inert tabindex="-1">
@@ -867,10 +823,6 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17.5 9.5 10l3.2 4.2 2.2-2.7L20 17.5M5 6.5h.01M18 5h.01" /></svg><span id="scene-label">해변 하늘</span>
       </button>
       <span class="ctrl-sep"></span>
-      <button id="btn-add-track" class="ctrl-btn dock-button" aria-describedby="track-error">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V6l9-2v12M9 10l9-2M6 18a3 2 0 1 0 0 .1M15 16a3 2 0 1 0 0 .1" /></svg><span>음악</span>
-      </button>
-      <span class="ctrl-sep"></span>
       <button id="btn-locate" class="ctrl-btn dock-button" aria-describedby="location-help room-status">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s6-5.2 6-11a6 6 0 1 0-12 0c0 5.8 6 11 6 11Z" /><circle cx="12" cy="10" r="2" /></svg><span>위치</span>
       </button>
@@ -883,8 +835,6 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H5v14h5M13 8l4 4-4 4M8 12h9" /></svg><span>나가기</span>
       </button>
     </nav>
-    </div>
-
   </div>
   <p id="location-help" class="sr-only">위치 권한은 현재 장소 기준으로 하늘의 시간과 고도를 맞추는 데만 사용됩니다.</p>
 
@@ -902,10 +852,6 @@
     </div>
   </div>
 
-  <!-- Hidden YouTube player -->
-  <div id="yt-frame" class="absolute" aria-hidden="true" inert style="width:1px;height:1px;overflow:hidden;left:-9999px;top:-9999px;"></div>
-
-  <script src="https://www.youtube.com/iframe_api"></script>
   <script type="module" src="/app.js"></script>
 </body>
 </html>

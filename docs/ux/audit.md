@@ -1,8 +1,8 @@
 # AethelDesk UX Contract And Audit History
 
-## Quiet Orbit Current UX Contract — 2026-08-24
+## Quiet Orbit Current UX Contract — 2026-08-26
 
-Quiet Orbit is the current Korean-primary experience for the lobby and shared focus room. It preserves the existing room APIs, WebSocket state authority, session-only room tokens, and four client-local display preferences.
+Quiet Orbit is the current Korean-primary experience for the lobby and shared focus room. It preserves the existing room APIs, WebSocket state authority, session-only room tokens, and four allowlisted client-local preferences (`scene`, `next-intent`, `display-quality`, and `display-fx`).
 
 ### Visual language
 
@@ -22,8 +22,11 @@ Quiet Orbit is the current Korean-primary experience for the lobby and shared fo
 - The top HUD keeps the AethelDesk identity, selectable room code, copy action, completed-session constellation, visible connection label, clock, and date.
 - `#focus-btn` is the only action that starts a session. The button visibly includes `#idle-duration`; 25/50-minute options only choose the duration.
 - Focus and break modes center the monumental timer, phase label, progress line, and relevant pause/cancel/skip controls. Hidden chrome must be both visually hidden and non-interactive.
-- Music controls remain visible for all connected participants because playback is shared room state, even when the current client has never saved a playlist.
-- The scene control opens a labelled four-option picker: 하늘, 도시, 해변, 숲. The active option uses `aria-pressed`, persists locally, and announces the change.
+- 정상 집중 완료 시 서버의 `reward_id`가 정확히 한 번 증가하고 `break_duration`과 `break_remaining`이 모두 600초가 된다. 네 번째 완료도 동일한 10분 휴식이며, 취소·휴식 건너뛰기·재접속은 새 보상을 만들지 않는다.
+- 완료 보상은 집중을 끝냈다는 조용한 시각적 흔적으로 표현한다. `reward_id`가 증가한 경우에만 새 보상을 공개하고, 재접속으로 같은 값을 다시 받았을 때는 완료 연출을 반복하지 않는다.
+- 새 완료가 관찰된 첫 30초는 완료 공개, 중간 구간은 화면을 떠나는 회복 선택, 마지막 60초는 다음 집중 의도 선택으로 이어진다. 모든 선택은 선택 사항이고 타이머를 막거나 보상을 바꾸지 않으며, 다음 의도만 이 브라우저에 저장된다.
+- The scene control opens a labelled three-option picker: 해변 하늘, 도시, 숲. The active option uses `aria-pressed`, persists locally, and announces the change; a legacy standalone `beach` choice migrates to the unified coastal `sky` scene.
+- The current room intentionally has no music, playlist, YouTube player, or scene ambient audio. A future first-party playlist is a separate product and state-contract decision.
 - Connection, copy, location, scene, and settings results appear in the visible live `#room-status` surface. Authentication and destructive exit confirmation retain focus containment and restoration.
 
 ### Responsive and verification contract
@@ -34,16 +37,16 @@ Quiet Orbit is the current Korean-primary experience for the lobby and shared fo
 - Sun and moon discs retain a readable circular limb in front of their additive halos. Bloom may soften the surrounding atmosphere but must not erase disc shape or crater detail.
 - Celestial composition and scene lighting are separate contracts: sun/moon sprites may be perspective-compressed to stay on screen, while shadows, water glitter, foliage shafts, and material highlights follow the eased physical key-light direction. A high noon state must not cast horizon-length shadows.
 - Time-slider jumps ease palette, daylight, elevation, body positions, light direction, and satellite anchor together. Consumers must not combine a target elevation with a still-night live grade.
-- The beach uses an overscanned land mesh plus one shared curved shoreline equation for water, foam, wet sand, and tide. The complete allowed camera yaw must never expose a mesh edge, stepped block, or triangular sand wedge.
+- The unified coastal `sky` scene uses an overscanned land mesh plus one shared curved shoreline equation for water, foam, wet sand, and tide. The complete allowed camera yaw must never expose a mesh edge, stepped block, or triangular sand wedge.
 - Scene-local effects obey the same display and motion controls as post-processing: reduced motion freezes decoration, and disabling shafts also disables forest canopy cards and motes.
 - Renderer quality always caps the effective DPR at 2 and routes fatal tick, shader, post-processing, or WebGL-context failures to the complete 2D fallback instead of leaving a blank `is-3d` canvas.
 - Modal and panel backgrounds are inert and hidden from assistive technology while open, with focus restored to the trigger on close. Coarse-pointer targets remain at least 44 CSS pixels.
-- Every production-build QA pass covers desktop, 1024×768 coarse tablet, 844×390 short landscape, 390×844, and 320×568; idle, focus, auth, track error, display, and exit states; all four scenes; keyboard focus; and reduced motion.
-- Scene QA fails on any uncaught page error or console error. In particular, the beach scene must render beyond multiple animation frames without a reduced-motion helper error.
+- Every production-build QA pass covers desktop, 1024×768 coarse tablet, 844×390 short landscape, 390×844, and 320×568; idle, focus, break/reward, auth, display, and exit states; all three scenes; keyboard focus; and reduced motion.
+- Scene QA fails on any uncaught page error or console error. In particular, the unified coast must render beyond multiple animation frames without an ocean, bloom, or reduced-motion helper error.
 
 ## Historical Task 9 UX Discovery Audit
 
-The sections below are retained as audit history. Where they conflict with the dated Quiet Orbit contract above—especially the former deferral of a scene picker—the current contract takes precedence.
+The sections below are retained as audit history. Where they conflict with the dated Quiet Orbit contract above—especially the former deferral of a scene picker and the retired YouTube/music controls—the current contract takes precedence.
 
 Discovery only. This audit is grounded in `frontend/lobby.html`, `frontend/room.html`, `frontend/app.js`, `frontend/scenes.js`, the current e2e flows, and Playwright inspection against `http://127.0.0.1:8019`. No UI or behavior changes were made.
 
@@ -52,7 +55,7 @@ Evidence files:
 - `.omo/evidence/task-9-ux-keyboard.md`
 - `.omo/evidence/task-9-ux-mobile-motion.md`
 
-Selectors explicitly covered: `#pin-input`, `#btn-start`, `#room-auth`, `#focus-btn`, `#time-slider`, `#music-bar`, `#exit-confirm`.
+Selectors explicitly covered: `#pin-input`, `#btn-start`, `#room-auth`, `#focus-btn`, `#time-slider`, `#exit-confirm`.
 
 ## Lobby Create
 
@@ -74,7 +77,7 @@ Selectors explicitly covered: `#pin-input`, `#btn-start`, `#room-auth`, `#focus-
 
 - Current DOM: `#room-auth` is a hidden/flex overlay shown when `sessionStorage` has no `room_token:{ROOM_ID}` or the WebSocket closes with code `1008`; `#room-pin-input` and `#room-pin-submit` retry the join API.
 - Playwright finding: with no token, focus lands in `#room-pin-input`, wrong PIN displays `입장할 수 없습니다`, and screenshot `task-9-room-auth.png` captured the overlay state.
-- Accessibility finding: `#room-auth` is not a semantic modal (`role="dialog"`, `aria-modal="true"`, labelled title), and focus is not trapped. Tabbing moved from `#room-pin-submit` to the hidden off-screen `#yt-frame` and then to `body` instead of cycling inside the auth prompt.
+- Accessibility finding: `#room-auth` was not a semantic modal (`role="dialog"`, `aria-modal="true"`, labelled title), and focus was not trapped. Tabbing left the prompt instead of cycling inside it.
 - Error/status finding: `#room-auth-error` has no `aria-live`, so the wrong-PIN message may not be announced.
 - Priority: Task 10 candidate. Make `#room-auth` a real modal dialog and keep focus within `#room-pin-input`/`#room-pin-submit` while visible.
 
@@ -93,13 +96,10 @@ Selectors explicitly covered: `#pin-input`, `#btn-start`, `#room-auth`, `#focus-
 - Copy finding: `#focus-btn` says `Focus`; active controls say `정지`, `취소`, and break row text is English `break` / `skip`. This conflicts with the future Korean-primary direction.
 - Priority: Task 10 candidate. Fix focusability of inactive timer controls, expose selected duration with `aria-pressed`, and convert timer copy to Korean-primary.
 
-## Music Input
+## Retired Music Input
 
-- Current DOM: `#music-bar` is hidden until a saved playlist exists or a track is added; `#btn-add-track` swaps `#action-bar` for `#track-row`; `#track-input` accepts a YouTube URL or video ID.
-- Playwright finding: opening the track row focuses `#track-input`, Escape closes it, and `#music-bar` starts at `opacity: 0` with `pointer-events: none`.
-- Accessibility finding: hidden `#music-bar` buttons (`#btn-pause`, `#btn-play`, `#btn-skip`) are still tabbable while `pointer-events: none`, creating invisible keyboard stops.
-- Error finding: invalid track input only changes the border color; no text error or live region explains what failed.
-- Priority: Task 10 candidate. Remove hidden music controls from tab order until visible and add an inline Korean validation message for invalid YouTube input.
+- This historical surface has been removed. The current room has no YouTube iframe, playlist storage, shared music state, or music WebSocket command.
+- Old `music_play`, `music_pause`, and `music_skip` messages are ignored by the server and cannot alter canonical room state.
 
 ## Time Slider
 
@@ -108,9 +108,9 @@ Selectors explicitly covered: `#pin-input`, `#btn-start`, `#room-auth`, `#focus-
 - Journey hypothesis: sighted mouse users can discover the control through the title; keyboard and screen reader users only hear a generic range with numeric minutes.
 - Priority: Task 10 candidate. Label `#time-slider`, expose formatted time such as `10:55`, and keep double-click reset as a supplementary shortcut rather than the only discoverable reset cue.
 
-## Scene Switching
+## Scene Switching (historical)
 
-- Current DOM: `#btn-scene` cycles `sky -> city -> beach -> forest`, updates button text such as `◈ 도시`, and persists `scene` in `localStorage`.
+- Historical DOM: `#btn-scene` cycled `sky -> city -> beach -> forest`, updated button text such as `◈ 도시`, and persisted `scene` in `localStorage`. The current contract replaces this with a three-option picker and migrates `beach` to `sky`.
 - Playwright finding: click changed button text to `◈ 도시`, `localStorage.scene` to `city`, and `body.dataset.scene` to `city`.
 - Accessibility finding: there is no announcement that the scene changed and no menu/list semantics that tells users all possible scenes.
 - Motion finding: city, beach, and forest canvas loops use `requestAnimationFrame` and continue under reduced-motion emulation.
@@ -147,7 +147,7 @@ Selectors explicitly covered: `#pin-input`, `#btn-start`, `#room-auth`, `#focus-
 
 ## Korean Copy
 
-- Current mixed copy: `AethelDesk`, `PIN`, `Focus`, `Room PIN`, `YouTube URL`, `break`, and `skip` remain English; core actions such as `시작`, `입장`, `정지`, `취소`, `재생`, `다음`, `위치`, and `나가기` are Korean.
+- Current product terms keep `AethelDesk` and `PIN`; timer actions and state feedback use Korean-primary `집중`, `휴식`, `정지`, `취소`, `건너뛰기`, `위치`, and `나가기`.
 - Glossary proposal for Task 10:
 
 | Current | Korean-primary candidate | Notes |
@@ -156,17 +156,17 @@ Selectors explicitly covered: `#pin-input`, `#btn-start`, `#room-auth`, `#focus-
 | Room PIN | 방 PIN | Keep PIN acronym if project treats it as a product/security term. |
 | PIN | PIN | Use consistently after first mention. |
 | break | 휴식 | Timer break row. |
-| skip | 건너뛰기 | Use for break skip; music can remain `다음`. |
-| YouTube URL 또는 영상 ID | YouTube URL 또는 영상 ID | Already understandable; Task 10 can decide whether `영상 링크 또는 ID` is warmer. |
-| ◈ 하늘 / 도시 / 해변 / 숲 | Same | Scene labels are already Korean-primary. |
+| skip | 건너뛰기 | Use for break skip. |
+| Focus complete | 집중 완료 | Announce only when `reward_id` increases. |
+| 해변 하늘 / 도시 / 숲 | Same | Current scene-picker labels are Korean-primary. |
 
 - Priority: Task 10 candidate. Make interactive/state copy Korean-primary while keeping brand and technical acronyms stable.
 
 ## Accessibility Audit
 
-- Labels: `#pin-input`, `#room-pin-input`, `#time-slider`, and `#track-input` rely on placeholders/title text rather than explicit labels.
-- Live regions: `#lobby-error`, `#room-auth-error`, connection state, geolocation outcome, scene changes, timer start/pause/cancel, and invalid track input do not expose live announcements.
-- Focus management: collapsed lobby join controls, inactive timer controls, hidden `#music-bar`, and off-screen `#yt-frame` are reachable by Tab when they should not be.
+- Labels: `#pin-input`, `#room-pin-input`, and `#time-slider` rely on placeholders/title text rather than explicit labels.
+- Live regions: `#lobby-error`, `#room-auth-error`, connection state, geolocation outcome, scene changes, and timer start/pause/cancel/completion need clear announcements.
+- Focus management: collapsed lobby join controls and inactive timer controls must not remain reachable by Tab.
 - Modal behavior: `#room-auth` and `#exit-confirm` are visual overlays/prompts without dialog semantics or focus trapping/return.
 - Motion preference: reduced-motion emulation does not change the decorative CSS/canvas motion profile.
 
@@ -180,12 +180,12 @@ Use this as the starting Task 10 copy contract:
 | Join room | 입장 | `#btn-join`, `#room-pin-submit` |
 | Room PIN | 방 PIN | `#pin-input`, `#room-auth` |
 | Focus session | 집중 | `#focus-btn`, timer status |
-| Pause | 정지 or 일시정지 | `#btn-pause-timer`, `#btn-pause`; choose one consistently. |
+| Pause | 정지 or 일시정지 | `#btn-pause-timer`; choose one consistently. |
 | Resume | 재개 | Timer paused state. |
-| Cancel | 취소 | Timer, track, exit prompts. |
+| Cancel | 취소 | Timer and exit prompts. |
 | Break | 휴식 | Break row. |
 | Skip break | 건너뛰기 | `#btn-skip-break` |
-| Music next | 다음 | `#btn-skip` |
+| Completion reward | 집중 완료 | Announce when `reward_id` increases. |
 | Location | 위치 | `#btn-locate` plus status message. |
 | Exit | 나가기 | `#btn-exit`, `#exit-confirm` |
 
@@ -194,14 +194,13 @@ Use this as the starting Task 10 copy contract:
 - Keyboard-first lobby user: after `#code-toggle` is closed, Tab moves to invisible `#room-input`/`#btn-join`, creating a perceived trap before the page wraps.
 - Returning room user with expired token: `#room-auth` appears and focuses the PIN field, but Tab leaves the prompt and wrong-PIN feedback is not announced.
 - Focus-session user: after `#focus-btn`, hidden idle controls and active timer controls are not consistently represented in the accessibility tree, making pause/cancel state hard to discover.
-- Music user: invalid track input provides only a red border, so users may not understand accepted YouTube URL/video ID formats.
 - Motion-sensitive user: reduced-motion preference is ignored by both CSS animations and canvas loops.
 
 ## Prioritized Fixes For Task 10
 
-1. P0 Task 10 candidate: remove invisible controls from the tab order across collapsed lobby join, inactive timer rows, hidden `#music-bar`, `#track-row`, `#exit-confirm`, and `#yt-frame`.
+1. P0 Task 10 candidate: remove invisible controls from the tab order across collapsed lobby join, inactive timer rows, and `#exit-confirm`.
 2. P0 Task 10 candidate: make `#room-auth` and `#exit-confirm` semantic dialogs with focus management, escape/cancel behavior, and live error text.
-3. P1 Task 10 candidate: add explicit labels and live status regions for `#pin-input`, `#room-pin-input`, `#time-slider`, lobby/auth errors, connection state, geolocation, scene changes, and track validation.
+3. P1 Task 10 candidate: add explicit labels and live status regions for `#pin-input`, `#room-pin-input`, `#time-slider`, lobby/auth errors, connection state, geolocation, scene changes, and focus completion.
 4. P1 Task 10 candidate: implement reduced-motion handling for decorative CSS animations, transitions, and canvas loops.
 5. P1 Task 10 candidate: convert mixed interactive copy to Korean-primary using the glossary above.
 6. P2 later/out of scope: replace one-button scene cycling with a richer scene picker.
@@ -212,9 +211,9 @@ Use this as the starting Task 10 copy contract:
 
 Task 10 implemented the highest priority findings from this audit while preserving the Vite + vanilla ES module boundaries, room PIN/token contracts, WebSocket semantics, and storage keys.
 
-- Korean-primary copy is now the expected UI policy for interactive controls, validation errors, live regions, and status text. Keep `AethelDesk`, `PIN`, YouTube terms, API fields, and storage keys stable.
-- Accessibility fixes include explicit labels, live regions, auth and exit dialog semantics, focus trap and restore behavior, hidden-control tab handling, invalid track feedback, and connection, scene, timer, and location status announcements.
+- Korean-primary copy is now the expected UI policy for interactive controls, validation errors, live regions, and status text. Keep `AethelDesk`, `PIN`, API fields, and storage keys stable.
+- Accessibility fixes include explicit labels, live regions, auth and exit dialog semantics, focus trap and restore behavior, hidden-control tab handling, and connection, scene, timer, reward, and location status announcements.
 - Reduced-motion handling now disables or reduces decorative CSS animation, transitions, and canvas loops while preserving core room sync.
-- The YouTube iframe API may replace the static frame at runtime, so the live iframe must stay `aria-hidden`, `tabindex="-1"`, and `inert` after construction and readiness.
-- Evidence for the implementation is recorded in `.omo/evidence/task-10-a11y-keyboard.txt`, `.omo/evidence/task-10-a11y-errors.txt`, and `.omo/evidence/task-10-a11y-youtube.txt`.
+- Completion feedback is keyed by monotonic `reward_id`; reconnecting to an already observed id must restore the completed state without replaying the reveal.
+- Evidence for the implementation is recorded in `.omo/evidence/task-10-a11y-keyboard.txt` and `.omo/evidence/task-10-a11y-errors.txt`.
 - Later UX work should not add a full i18n toggle, scene picker redesign, saved geolocation preferences, or new frontend frameworks unless separately approved.

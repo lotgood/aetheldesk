@@ -12,9 +12,9 @@ import { create3DEngine } from "./src/3d/engine.js";
 import { createSkyDome } from "./src/3d/sky-dome.js";
 import { createCelestialSystem } from "./src/3d/celestial.js";
 import { createSceneManager } from "./src/3d/scenes/scene-manager.js";
-import { createSpatialAudio } from "./src/3d/spatial-audio.js";
 import { createAtmosphere } from "./src/3d/atmosphere.js";
 import { prefersReducedMotion } from "./src/3d/motion.js";
+import { createRewardConstellation, REWARD_CONSTELLATION_CAP } from "./src/3d/reward-constellation.js";
 
 export const SCENES = Object.freeze(["sky", "city", "forest"]);
 export const SCENE_LABELS = Object.freeze({ sky: "해변 하늘", city: "도시", forest: "숲" });
@@ -35,7 +35,9 @@ let focusActive = false; // drives the camera push-in
 let skyDome = null;
 let celestial = null;
 let sceneManager = null;
-let spatialAudio = null;
+let rewardConstellation = null;
+let rewardProgress = 0;
+let rewardRestActive = false;
 let initFailed = false;
 let sceneTransitionToken = 0;
 let runtimeFallbackScheduled = false;
@@ -49,9 +51,53 @@ const atmosphere = createAtmosphere();
 const activeVisualLightPosition = new THREE.Vector3();
 const activeSceneLightPosition = new THREE.Vector3();
 
+function disposeRewardConstellation() {
+  rewardConstellation?.dispose();
+  rewardConstellation = null;
+}
+
+function positionRewardConstellation() {
+  if (!rewardConstellation || !engine) return;
+  const aspect = engine.camera.aspect || 16 / 9;
+  const viewportHeight = engine.renderer.domElement.clientHeight || window.innerHeight;
+  const compactScale = aspect < 0.8 ? 0.52 : viewportHeight <= 480 ? 0.8 : 0.96;
+  const worldX = -Math.min(9.6, Math.max(3.2, aspect * 5.1));
+  // Keep the earned instrument in front of scene geometry and at a stable
+  // screen-space landmark. The previous far-background placement let city
+  // towers swallow the reward and reduced it to an unreadable speck.
+  rewardConstellation.group.position.set(worldX, aspect < 0.8 ? 10 : 9, 8);
+  rewardConstellation.group.scale.setScalar(compactScale);
+  rewardConstellation.group.lookAt(engine.camera.position);
+}
+
+function syncRewardVisibility() {
+  if (!rewardConstellation || !engine) return;
+  const aspect = engine.camera.aspect || 16 / 9;
+  const viewportHeight = engine.renderer.domElement.clientHeight || window.innerHeight;
+  const compactIdle = aspect < 0.8 || viewportHeight <= 480;
+  rewardConstellation.group.visible = rewardProgress > 0 && (rewardRestActive || !compactIdle);
+}
+
+function createRuntimeRewardConstellation() {
+  if (!engine || rewardConstellation) return;
+  try {
+    rewardConstellation = createRewardConstellation({
+      seed: "aetheldesk-return",
+      completedSessions: rewardProgress,
+      pixelRatio: engine.renderer.getPixelRatio(),
+    });
+    positionRewardConstellation();
+    engine.scene.add(rewardConstellation.group);
+    syncRewardVisibility();
+  } catch (error) {
+    rewardConstellation = null;
+    console.error("[AethelDesk 3D] Reward constellation could not be created.", error);
+  }
+}
+
 function commitActiveScene(
   resolvedName,
-  { requestedName = resolvedName, reason = "selection", playAudio = true, forcedFallback = false } = {},
+  { requestedName = resolvedName, reason = "selection", forcedFallback = false } = {},
 ) {
   const resolved = normalizeSceneName(resolvedName);
   activeScene = resolved;
@@ -62,8 +108,6 @@ function commitActiveScene(
   // the user's preference but gate only this scene; corona, shafts and grading
   // remain active and city/forest restore bloom automatically.
   engine?.setBloomSuppressed(Boolean(sceneManager?.getActiveSceneProfile().suppressBloom));
-  if (playAudio) spatialAudio?.startSceneAmbience(resolved);
-
   const detail = {
     requested: normalizeSceneName(requestedName),
     active: resolved,
@@ -83,6 +127,7 @@ function scheduleRuntime2DFallback() {
   requestAnimationFrame(() => {
     runtimeFallbackScheduled = false;
     const requestedScene = activeScene;
+    disposeRewardConstellation();
     engine?.destroy();
     engine = null;
     skyDome = null;
@@ -93,7 +138,6 @@ function scheduleRuntime2DFallback() {
     commitActiveScene("sky", {
       requestedName: requestedScene,
       reason: "engine-fallback",
-      playAudio: true,
       forcedFallback: true,
     });
   });
@@ -103,7 +147,7 @@ function reconcileManagedScene(reason = "runtime-fallback") {
   if (!sceneManager) return activeScene;
   const resolved = normalizeSceneName(sceneManager.getActiveSceneName());
   if (resolved === activeScene) return resolved;
-  return commitActiveScene(resolved, { requestedName: activeScene, reason, playAudio: true });
+  return commitActiveScene(resolved, { requestedName: activeScene, reason });
 }
 
 function syncSceneMetrics() {
@@ -115,6 +159,9 @@ function syncSceneMetrics() {
   sceneManager.setViewportAspect(aspect);
   sceneManager.setPixelRatio(pixelRatio);
   sceneManager.setShaftsEnabled(engine.getEffectiveFX().shafts);
+  rewardConstellation?.setPixelRatio(pixelRatio);
+  positionRewardConstellation();
+  syncRewardVisibility();
 }
 
 function init3D() {
@@ -145,7 +192,7 @@ function init3D() {
     sceneManager = nextSceneManager;
     const savedFX = readDisplayFX();
     if (savedFX) applyFX(savedFX);
-    spatialAudio = createSpatialAudio();
+    createRuntimeRewardConstellation();
     syncSceneMetrics();
 
     const requestedScene = activeScene;
@@ -153,7 +200,6 @@ function init3D() {
     commitActiveScene(resolvedScene, {
       requestedName: requestedScene,
       reason: resolvedScene === requestedScene ? "initialization" : "construction-fallback",
-      playAudio: false,
     });
 
     engine.onTick((delta, elapsed) => {
@@ -173,6 +219,7 @@ function init3D() {
       skyDome.update(delta, elapsed, atmosphere);
       celestial.update(delta, elapsed, atmosphere);
       sceneManager.update(delta, elapsed, atmosphere);
+      rewardConstellation?.update(delta, elapsed);
 
       if (!sceneManager.isAvailable()) {
         scheduleRuntime2DFallback();
@@ -217,6 +264,7 @@ function init3D() {
     });
   } catch (err) {
     initFailed = true;
+    disposeRewardConstellation();
     nextEngine?.destroy();
     engine = null;
     skyDome = null;
@@ -225,7 +273,6 @@ function init3D() {
     commitActiveScene("sky", {
       requestedName: activeScene,
       reason: "engine-fallback",
-      playAudio: false,
     });
     document.body.classList.remove("is-3d");
     console.error("Failed to initialize 3D Engine:", err);
@@ -251,7 +298,7 @@ async function switchScene(name) {
       : resolvedName === requestedName
         ? "selection"
         : "construction-fallback";
-    commitActiveScene(resolvedName, { requestedName, reason, playAudio: true });
+    commitActiveScene(resolvedName, { requestedName, reason });
     if (lastCelestial) {
       renderScene(lastCelestial, lastState);
     }
@@ -308,7 +355,7 @@ async function switchScene(name) {
   const stableRender = transitionEngine.afterNextStableRender();
   const resolvedName = transitionManager.activatePreparedScene(prepared);
   const reason = resolvedName === requestedName ? "selection" : "construction-fallback";
-  commitActiveScene(resolvedName, { requestedName, reason, playAudio: true });
+  commitActiveScene(resolvedName, { requestedName, reason });
   if (lastCelestial) renderScene(lastCelestial, lastState);
   const frameReady = await stableRender;
 
@@ -341,7 +388,32 @@ function renderScene(c, state) {
 }
 
 function resetForResize() {
-  if (engine) engine.resize();
+  if (engine) {
+    engine.resize();
+    positionRewardConstellation();
+  }
+}
+
+function updateReward({ completedSessions = 0, reveal = false, active = false } = {}) {
+  rewardProgress = Number.isFinite(completedSessions)
+    ? Math.max(0, Math.min(REWARD_CONSTELLATION_CAP, Math.trunc(completedSessions)))
+    : 0;
+  rewardRestActive = Boolean(active);
+  rewardConstellation?.setCompletedSessions(rewardProgress, { reveal: Boolean(reveal) });
+  syncRewardVisibility();
+}
+
+function destroy() {
+  sceneTransitionToken += 1;
+  runtimeFallbackScheduled = false;
+  disposeRewardConstellation();
+  engine?.destroy();
+  engine = null;
+  skyDome = null;
+  celestial = null;
+  sceneManager = null;
+  initFailed = true;
+  document.body.classList.remove("is-3d");
 }
 
 // FX toggles split by owner: the engine/post own bloom, shafts, shadows and
@@ -365,6 +437,7 @@ export function createSceneController({ container = document.body } = {}) {
       focusActive = !!(state.focus || state.break);
       if (celestial) celestial.updatePomodoro(state);
     },
+    updateReward,
     resetForResize,
     switchScene,
     getActiveScene: () => activeScene,
@@ -373,12 +446,15 @@ export function createSceneController({ container = document.body } = {}) {
       return () => sceneChangeListeners.delete(listener);
     },
     getEngine: () => engine,
+    getRewardDiagnostics: () => rewardConstellation?.getDiagnostics() || {
+      completedSessions: rewardProgress,
+      disposed: true,
+    },
     getSceneHealth: () => sceneManager?.getHealth() || {
       active: activeScene,
       ready: [],
       failed: initFailed ? ["engine"] : [],
     },
-    getSpatialAudio: () => spatialAudio,
     setQuality: (name) => {
       storeDisplayQuality(name);
       if (engine) {
@@ -404,5 +480,6 @@ export function createSceneController({ container = document.body } = {}) {
         : { bloom: true, shafts: true, grain: 1, shadows: true };
       return { ...base, mica: stored.mica ?? true };
     },
+    destroy,
   };
 }

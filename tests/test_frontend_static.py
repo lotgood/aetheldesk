@@ -16,7 +16,7 @@ ROOM_SOCKET_JS = SRC / "room-websocket.js"
 ROOM_AUTH_JS = SRC / "room-auth.js"
 ROOM_RENDERER_JS = SRC / "room-renderer.js"
 TIMER_CONTROLS_JS = SRC / "timer-controls.js"
-MUSIC_YOUTUBE_JS = SRC / "music-youtube.js"
+REST_RITUAL_JS = SRC / "rest-ritual.js"
 DOM_JS = SRC / "dom.js"
 LOBBY_SKY_JS = SRC / "lobby-sky.js"
 SCENE_PICKER_JS = SRC / "scene-picker.js"
@@ -36,21 +36,37 @@ def _frontend_sources() -> dict[str, str]:
     return {path.name: path.read_text() for path in paths}
 
 
-def test_playlist_is_read_once_and_shared_music_controls_stay_visible():
+def test_room_has_no_music_or_external_media_dependencies():
+    room_source = ROOM_HTML.read_text()
+    room_css = ROOM_CSS.read_text()
     storage_source = STORAGE_JS.read_text()
     app_source = APP_JS.read_text()
-    music_source = MUSIC_YOUTUBE_JS.read_text()
 
-    assert "const savedPlaylist = readPlaylist();" in storage_source
-    assert "ids: savedPlaylist || [...DEFAULT_PLAYLIST_IDS]" in storage_source
-    assert "const playlist = createPlaylistState();" in app_source
-    assert "if (playlist.savedPlaylist) showMusicBar();" not in music_source
-    sync_source = music_source.split("function syncYT(music)", 1)[1].split("function initYouTubePlayer", 1)[0]
-    initialization_source = music_source.split('setHiddenInteraction(byId("music-bar"), true);', 1)[1]
-    assert "showMusicBar();" in sync_source
-    assert "showMusicBar();" in initialization_source
-    assert "syncPlaybackControls(music.playing);" in sync_source
-    assert storage_source.count("readPlaylist()") == 2
+    assert not (SRC / "music-youtube.js").exists()
+    for removed_token in (
+        "music-youtube",
+        "createMusicController",
+        "createPlaylistState",
+        "state.music",
+        "music_play",
+        "music_pause",
+        "music_skip",
+    ):
+        assert removed_token not in app_source
+    for removed_token in (
+        "music-bar",
+        "btn-add-track",
+        "track-row",
+        "yt-frame",
+        "youtube.com/iframe_api",
+    ):
+        assert removed_token not in room_source
+        assert removed_token not in room_css
+    assert "PLAYLIST_STORAGE_KEY" not in storage_source
+    assert "readPlaylist" not in storage_source
+    assert "storePlaylist" not in storage_source
+    assert 'localStorage.removeItem("playlist")' in storage_source
+    assert "migrateLegacyPlaylistStorage();" in app_source
 
 
 def test_duration_selection_does_not_write_dead_session_storage_key():
@@ -64,19 +80,21 @@ def test_frontend_persists_only_allowlisted_local_storage_keys():
     combined_source = "\n".join(sources.values())
     storage_source = STORAGE_JS.read_text()
 
-    assert 'export const PLAYLIST_STORAGE_KEY = "playlist";' in storage_source
     assert 'export const SCENE_STORAGE_KEY = "scene";' in storage_source
+    assert 'export const NEXT_INTENT_STORAGE_KEY = "next-intent";' in storage_source
     assert 'export const DISPLAY_QUALITY_STORAGE_KEY = "display-quality";' in storage_source
     assert 'export const DISPLAY_FX_STORAGE_KEY = "display-fx";' in storage_source
-    assert "localStorage.getItem(PLAYLIST_STORAGE_KEY)" in storage_source
-    assert "localStorage.setItem(PLAYLIST_STORAGE_KEY" in storage_source
     assert "localStorage.getItem(SCENE_STORAGE_KEY)" in storage_source
     assert "localStorage.setItem(SCENE_STORAGE_KEY" in storage_source
+    assert "localStorage.getItem(NEXT_INTENT_STORAGE_KEY)" in storage_source
+    assert "localStorage.setItem(NEXT_INTENT_STORAGE_KEY" in storage_source
     assert "localStorage.getItem(DISPLAY_QUALITY_STORAGE_KEY)" in storage_source
     assert "localStorage.setItem(DISPLAY_QUALITY_STORAGE_KEY" in storage_source
     assert "localStorage.getItem(DISPLAY_FX_STORAGE_KEY)" in storage_source
     assert "localStorage.setItem(DISPLAY_FX_STORAGE_KEY" in storage_source
     assert combined_source.count("localStorage.setItem(") == 4
+    assert 'localStorage.getItem("playlist"' not in combined_source
+    assert 'localStorage.setItem("playlist"' not in combined_source
     assert 'localStorage.setItem("pomodoro_minutes"' not in combined_source
     assert "localStorage.setItem(tokenStorageKey" not in combined_source
     assert "localStorage.getItem(tokenStorageKey" not in combined_source
@@ -153,19 +171,19 @@ def test_room_modules_have_intentional_boundaries():
     app_source = APP_JS.read_text()
 
     expected_imports = [
-        "./src/storage.js",
         "./src/room-auth.js",
         "./src/room-websocket.js",
         "./src/room-renderer.js",
+        "./src/rest-ritual.js",
         "./src/timer-controls.js",
-        "./src/music-youtube.js",
         "./src/scene-picker.js",
         "./scenes.js",
     ]
     for module_path in expected_imports:
         assert module_path in app_source
     assert "new WebSocket" in ROOM_SOCKET_JS.read_text()
-    assert "window.onYouTubeIframeAPIReady" in MUSIC_YOUTUBE_JS.read_text()
+    assert "music-youtube" not in app_source
+    assert not (SRC / "music-youtube.js").exists()
     assert "#dur-chips button" in TIMER_CONTROLS_JS.read_text()
     assert "renderFocus" in ROOM_RENDERER_JS.read_text()
 
@@ -205,22 +223,21 @@ def test_static_pages_keep_vite_module_loading_path():
     room = ROOM_HTML.read_text()
     lobby = LOBBY_HTML.read_text()
 
-    youtube_script = '<script src="https://www.youtube.com/iframe_api"></script>'
     app_script = '<script type="module" src="/app.js"></script>'
     lobby_script = '<script type="module" src="/lobby.js"></script>'
 
-    # Self-hosted assets replace the Tailwind/Google Fonts CDN so the
-    # room works fully offline (YouTube stays as the allowed exception).
+    # All room assets are self-hosted, so the focus room has no external
+    # script dependency and works fully offline after its own assets load.
     assert '<link rel="stylesheet" href="/tailwind.css" />' in room
     assert '<link rel="stylesheet" href="/tailwind.css" />' in lobby
     assert '<link rel="stylesheet" href="/fonts.css" />' in room
     assert '<link rel="stylesheet" href="/fonts.css" />' in lobby
     assert '"/room.css"' in room
     assert '"/lobby.css"' in lobby
-    assert youtube_script in room
+    assert '<script src="http' not in room
+    assert "youtube.com/iframe_api" not in room
     assert app_script in room
     assert lobby_script in lobby
-    assert room.index(youtube_script) < room.index(app_script)
 
 
 def test_responsive_polish_guards_short_landscape_and_mobile_copy():
@@ -231,22 +248,21 @@ def test_responsive_polish_guards_short_landscape_and_mobile_copy():
     assert "같은 하늘 아래,<br /> 각자의 일에 깊이 머무는 시간." in lobby_html
     assert "@media (orientation: landscape) and (max-height: 520px) and (min-width: 761px)" in lobby_css
     assert ".lobby-footer" in lobby_css and "position: static;" in lobby_css
-    assert "body.track-panel-open #controls" in room_css
-    assert "body.track-panel-open #track-row" in room_css
     assert "@media (pointer: coarse), (max-width: 900px), (orientation: landscape) and (max-height: 480px)" in room_css
-    assert ".copy-room,\n  .icon-button,\n  #btn-reset-time,\n  #track-add,\n  #track-cancel" in room_css
+    assert ".copy-room,\n  #btn-reset-time" in room_css
     assert "#time-slider {\n    min-height: 2.75rem !important;" in room_css
-    assert ".status-toast {\n  position: absolute;\n  top: calc(var(--room-edge) + 4.75rem);" in room_css
-    assert "right: var(--room-edge);" in room_css
+    assert "#action-bar { width: min(100%, 20rem); min-height: 3.75rem; }" in room_css
+    assert ".status-toast {\n  position: absolute;\n  top: calc(var(--room-top-edge) + 4.75rem);" in room_css
+    assert "right: var(--room-right-edge);" in room_css
     assert "text-align: right;" in room_css
-    assert "@media (pointer: coarse) and (min-width: 901px) and (orientation: landscape)" in room_css
+    assert "grid-template-areas:" in room_css and "'session ritual'" in room_css
+    assert "@container room-stage (max-width: 360px) and (max-height: 520px)" in room_css
 
 
 def test_room_dialogs_use_shared_modal_isolation():
     dom_source = DOM_JS.read_text()
     modules = [
         ROOM_AUTH_JS.read_text(),
-        MUSIC_YOUTUBE_JS.read_text(),
         SCENE_PICKER_JS.read_text(),
         (SRC / "display-settings.js").read_text(),
         APP_JS.read_text(),
@@ -293,11 +309,82 @@ def test_task_10_accessibility_markup_and_live_regions_present():
     assert 'id="room-status"' in room and 'role="status"' in room
     assert 'id="timer-status"' in room and 'role="status"' in room
     assert 'id="time-slider"' in room and 'aria-valuetext="12:00"' in room
-    assert 'id="track-error"' in room and 'aria-live="polite"' in room
     assert 'id="room-auth"' in room and 'role="dialog"' in room and 'aria-modal="true"' in room
     assert 'id="exit-confirm"' in room and 'role="alertdialog"' in room
-    assert 'id="yt-frame"' in room and "inert" in room
+    assert 'id="rest-ritual"' in room and 'role="region"' in room
+    assert 'id="rest-live"' in room and 'aria-live="polite"' in room
+    assert 'id="rest-title" tabindex="-1"' in room
+    assert 'aria-label="휴식 건너뛰기"' in room
     assert "@media (prefers-reduced-motion: reduce)" in room
+
+
+def test_rest_ritual_is_optional_local_and_exposes_stable_reward_hooks():
+    app_source = APP_JS.read_text()
+    room_source = ROOM_HTML.read_text()
+    room_css = ROOM_CSS.read_text()
+    ritual_source = REST_RITUAL_JS.read_text()
+
+    assert 'import { createRestRitual } from "./src/rest-ritual.js";' in app_source
+    assert "const restRitual = createRestRitual();" in app_source
+    assert "const restState = restRitual.update(state, { resetRewardBaseline: firstSnapshot });" in app_source
+    for copy in ("눈 쉬기", "물 마시기", "짧게 호흡하기", "같은 일 계속", "다음 한 가지", "오늘 마침"):
+        assert copy in room_source and copy in ritual_source
+    assert room_source.count('data-rest-choice="') == 3
+    assert room_source.count('data-next-intent="') == 3
+    assert ritual_source.count('setAttribute("aria-pressed"') == 1
+    assert 'CustomEvent("aethel:reward-progress"' in ritual_source
+    assert "rewardId: model.rewardId" in ritual_source
+    assert "document.body.dataset.restPhase" in ritual_source
+    assert "document.body.dataset.rewardProgress" in ritual_source
+    assert "storeNextIntent(selectedIntent)" in ritual_source
+    assert "send(" not in ritual_source
+    assert "WebSocket" not in ritual_source
+    assert "body[data-rest-phase='reveal'] #rest-ritual" in room_css
+    assert "@media (prefers-reduced-motion: reduce)" in room_css
+
+
+def test_reward_snapshots_are_monotonic_and_the_3d_mark_is_runtime_owned():
+    app_source = APP_JS.read_text()
+    scenes_source = SCENES_JS.read_text()
+    ritual_source = REST_RITUAL_JS.read_text()
+    reward_source = (SRC / "3d" / "reward-constellation.js").read_text()
+    socket_source = ROOM_SOCKET_JS.read_text()
+    room_source = ROOM_HTML.read_text()
+    room_css = ROOM_CSS.read_text()
+
+    assert "Number.isInteger(state?.revision)" in app_source
+    assert "if (firstSnapshot) acceptedRevision = null;" in app_source
+    assert "revision < acceptedRevision" in app_source
+    assert "revision === null && acceptedRevision !== null" in app_source
+    assert "restState.reveal" in app_source
+    assert "!prevBreak && state.break" not in app_source
+    assert "completedSessions: restState.cycleProgress" in app_source
+    assert "reveal: restState.reveal" in app_source
+    assert "active: restState.isBreak" in app_source
+    assert "const generation = ++connectionGeneration;" in socket_source
+    assert "onState(payload.data, { generation, firstSnapshot });" in socket_source
+    assert "if (socket !== ws) return;" in socket_source
+    assert "createRewardRevealTracker" in ritual_source
+    assert "if (resetRewardBaseline) rewardTracker.reset();" in ritual_source
+    assert "Number.isInteger(value) && value >= 0" in ritual_source
+    assert "rewardId > observedRewardId" in ritual_source
+    assert "focusBeforeHide(root" in ritual_source
+    assert 'byId("btn-pause-timer")' in ritual_source and 'byId("focus-btn")' in ritual_source
+
+    assert 'from "./src/3d/reward-constellation.js"' in scenes_source
+    assert "createRuntimeRewardConstellation();" in scenes_source
+    assert "rewardConstellation?.update(delta, elapsed);" in scenes_source
+    assert "rewardConstellation?.dispose();" in scenes_source
+    assert "function syncRewardVisibility()" in scenes_source
+    assert "rewardRestActive || !compactIdle" in scenes_source
+    assert "updateReward," in scenes_source and "destroy," in scenes_source
+    assert "group.visible = completed > 0" in reward_source
+    assert "{ reveal = true }" in reward_source
+
+    assert "viewport-fit=cover" in room_source
+    assert room_source.count("<div") == room_source.count("</div>")
+    for safe_edge in ("safe-area-inset-top", "safe-area-inset-right", "safe-area-inset-bottom", "safe-area-inset-left"):
+        assert safe_edge in room_css
 
 
 def test_quiet_orbit_scene_picker_markup_and_module_contract():
@@ -349,16 +436,14 @@ def test_quiet_orbit_idle_timer_connection_copy_and_break_progress_contracts():
     for label in ("연결 중", "연결됨", "재연결 중", "PIN 필요"):
         assert label in socket_source
 
-    assert "state.break_duration" not in renderer_source
+    assert "state.break_duration" in renderer_source
     assert "state.break_remaining" in renderer_source
-    assert "state.sessions_done" in renderer_source
+    assert "state.sessions_done % 4" not in renderer_source
 
     all_frontend_source = "\n".join(
         path.read_text() for path in [APP_JS, SCENES_JS, LOBBY_JS, *sorted(SRC.rglob("*.js"))]
     )
-    assert "state.break_duration" not in all_frontend_source
-    celestial_source = CELESTIAL_JS.read_text()
-    assert "state.sessions_done % 4 === 0 ? 1500 : 600" in celestial_source
+    assert "state.break_duration" in all_frontend_source
 
 
 def test_celestial_discs_and_scene_effects_keep_their_visual_contracts():
@@ -494,7 +579,7 @@ def test_task_10_accessibility_behavior_is_module_owned():
     dom_source = (SRC / "dom.js").read_text()
     auth_source = ROOM_AUTH_JS.read_text()
     renderer_source = ROOM_RENDERER_JS.read_text()
-    music_source = MUSIC_YOUTUBE_JS.read_text()
+    ritual_source = REST_RITUAL_JS.read_text()
     socket_source = ROOM_SOCKET_JS.read_text()
     scenes_source = SCENES_JS.read_text()
     lobby_sky_source = LOBBY_SKY_JS.read_text()
@@ -509,26 +594,12 @@ def test_task_10_accessibility_behavior_is_module_owned():
     assert 'setHiddenInteraction(byId("exit-confirm"), true)' in app_source
     assert "setHiddenInteraction(breakRow, true)" in renderer_source
     assert "setHiddenInteraction(focusRow, false)" in renderer_source
-    assert 'setHiddenInteraction(byId("music-bar"), true)' in music_source
-    assert "createFocusTrap(trackRowEl" in music_source
-    assert 'trackInput.setAttribute("aria-invalid", "true")' in music_source
-    assert "showMusicBar();" in music_source
-    assert "YouTube 링크 또는 11자리 영상 ID" in music_source
+    assert "setHiddenInteraction(root, true)" in ritual_source
+    assert "setGroupVisible(recoveryGroup" in ritual_source
+    assert "setGroupVisible(intentGroup" in ritual_source
     assert "connStatus.textContent" in socket_source
     assert "prefersReducedMotion" in scenes_source
     assert "prefersReducedMotion" in lobby_sky_source
-
-
-def test_youtube_player_replacement_stays_hidden_from_keyboard_navigation():
-    music_source = MUSIC_YOUTUBE_JS.read_text()
-
-    assert "function hideYouTubeFrame()" in music_source
-    assert 'ytPlayer?.getIframe?.() || byId("yt-frame")' in music_source
-    assert 'frame?.setAttribute("aria-hidden", "true")' in music_source
-    assert 'frame?.setAttribute("tabindex", "-1")' in music_source
-    assert 'frame?.toggleAttribute("inert", true)' in music_source
-    assert "events: { onReady: () => { hideYouTubeFrame(); ytReady = true;" in music_source
-    assert "setTimeout(hideYouTubeFrame, 0);" in music_source
 
 
 def test_quiet_orbit_visual_structure_and_session_contracts():

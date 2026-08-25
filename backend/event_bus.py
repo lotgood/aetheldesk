@@ -145,7 +145,12 @@ class RedisStateEventBus:
 
     def _is_state_snapshot(self, value: object) -> bool:
         return (
-            isinstance(value, dict) and set(value.keys()) == BACKEND_STATE_KEYS and isinstance(value.get("music"), dict)
+            isinstance(value, dict)
+            and set(value.keys()) == BACKEND_STATE_KEYS
+            and isinstance(value.get("break_duration"), int)
+            and isinstance(value.get("reward_id"), int)
+            and isinstance(value.get("revision"), int)
+            and (value.get("last_tick_slot") is None or isinstance(value.get("last_tick_slot"), int))
         )
 
     def _remember_event(self, room_id: str, event_id: str) -> None:

@@ -13,11 +13,6 @@ from backend import main as backend_main_module
 from backend import state as backend_state_module
 
 
-class MusicState(TypedDict):
-    playing: bool
-    video_id: str
-
-
 BackendState = TypedDict(
     "BackendState",
     {
@@ -28,8 +23,11 @@ BackendState = TypedDict(
         "pomodoro_duration": int,
         "break": bool,
         "break_remaining": int,
+        "break_duration": int,
         "sessions_done": int,
-        "music": MusicState,
+        "reward_id": int,
+        "revision": int,
+        "last_tick_slot": int | None,
         "time_override": str | None,
     },
 )
@@ -58,11 +56,13 @@ def make_timer_state(
     pomodoro_duration: int = 3000,
     break_: bool = False,
     break_remaining: int = 0,
+    break_duration: int = 600,
     sessions_done: int = 0,
+    reward_id: int = 0,
+    revision: int = 0,
+    last_tick_slot: int | None = None,
     time_override: str | None = None,
     celestial: dict[str, object] | None = None,
-    music_playing: bool = False,
-    video_id: str = "jfKfPfyJRdk",
 ) -> BackendState:
     return {
         "celestial": celestial if celestial is not None else {"marker": "celestial"},
@@ -72,8 +72,11 @@ def make_timer_state(
         "pomodoro_duration": pomodoro_duration,
         "break": break_,
         "break_remaining": break_remaining,
+        "break_duration": break_duration,
         "sessions_done": sessions_done,
-        "music": {"playing": music_playing, "video_id": video_id},
+        "reward_id": reward_id,
+        "revision": revision,
+        "last_tick_slot": last_tick_slot,
         "time_override": time_override,
     }
 
@@ -97,7 +100,11 @@ def test_backend_state_make_state_defaults_are_json_serializable(monkeypatch: py
     assert state["pomodoro_duration"] == 3000
     assert state["pomodoro_remaining"] == 3000
     assert state["break"] is False
-    assert state["music"]["video_id"] == "jfKfPfyJRdk"
+    assert state["break_duration"] == 600
+    assert state["reward_id"] == 0
+    assert state["revision"] == 0
+    assert state["last_tick_slot"] is None
+    assert "music" not in state
     assert state["celestial"] == {"marker": "celestial"}
     assert state["time_override"] is None
     assert state["sessions_done"] == 0
@@ -105,9 +112,27 @@ def test_backend_state_make_state_defaults_are_json_serializable(monkeypatch: py
 
 def test_backend_main_exports_state_compatibility_names():
     assert backend_main_module.BackendState is backend_state_module.BackendState
-    assert backend_main_module.MusicState is backend_state_module.MusicState
+    assert not hasattr(backend_main_module, "MusicState")
     assert backend_main_module.advance_timer_state is backend_state_module.advance_timer_state
     assert backend_main_module._parse_iso is backend_state_module._parse_iso
+
+
+def test_normalize_state_upgrades_legacy_music_snapshot_without_issuing_reward():
+    legacy = cast(dict[str, object], make_timer_state(break_=True, break_remaining=1500))
+    legacy.pop("break_duration")
+    legacy.pop("reward_id")
+    legacy.pop("revision")
+    legacy.pop("last_tick_slot")
+    legacy["music"] = {"playing": True, "video_id": "dQw4w9WgXcQ"}
+
+    normalized = backend_state_module.normalize_state(legacy)
+
+    assert "music" not in normalized
+    assert normalized["break_duration"] == 600
+    assert normalized["break_remaining"] == 600
+    assert normalized["reward_id"] == 0
+    assert normalized["revision"] == 0
+    assert normalized["last_tick_slot"] is None
 
 
 def test_make_state_defaults(monkeypatch: pytest.MonkeyPatch):
@@ -120,13 +145,15 @@ def test_make_state_defaults(monkeypatch: pytest.MonkeyPatch):
     assert state["pomodoro_duration"] == 3000
     assert state["pomodoro_remaining"] == 3000
     assert state["break"] is False
-    assert state["music"]["video_id"] == "jfKfPfyJRdk"
+    assert state["break_duration"] == 600
+    assert state["reward_id"] == 0
+    assert "music" not in state
     assert state["celestial"] == {"marker": "celestial"}
     assert state["time_override"] is None
     assert state["sessions_done"] == 0
 
 
-def test_handle_focus_music_and_duration_transitions(monkeypatch: pytest.MonkeyPatch):
+def test_handle_focus_and_duration_transitions(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(backend_main_module, "get_celestial_state", celestial_stub)
     state = backend_main.make_state()
 
@@ -158,24 +185,6 @@ def test_handle_focus_music_and_duration_transitions(monkeypatch: pytest.MonkeyP
         assert state["pomodoro_duration"] == before_duration
         assert state["pomodoro_remaining"] == before_remaining
 
-        state["break"] = True
-        state["break_remaining"] = 123
-        await backend_main.handle(state, {"type": "skip_break"})
-        assert state["break"] is False
-        assert state["break_remaining"] == 0
-
-        await backend_main.handle(state, {"type": "music_play"})
-        assert state["music"]["playing"] is True
-
-        await backend_main.handle(state, {"type": "music_pause"})
-        assert state["music"]["playing"] is False
-
-        await backend_main.handle(state, {"type": "music_skip", "video_id": "dQw4w9WgXcQ"})
-        assert state["music"]["video_id"] == "dQw4w9WgXcQ"
-
-        await backend_main.handle(state, {"type": "music_skip", "video_id": "not-valid"})
-        assert state["music"]["video_id"] == "dQw4w9WgXcQ"
-
     asyncio.run(run())
 
 
@@ -191,7 +200,9 @@ def test_advance_timer_state_counts_down_focus_and_requests_broadcast(monkeypatc
     assert state["break"] is False
 
 
-def test_advance_timer_state_transitions_focus_to_short_break(monkeypatch: pytest.MonkeyPatch):
+def test_normal_focus_completion_starts_ten_minute_break_and_issues_one_reward(
+    monkeypatch: pytest.MonkeyPatch,
+):
     monkeypatch.setattr(backend_main_module, "get_celestial_state", celestial_stub)
     state = make_timer_state(focus=True, pomodoro_remaining=1, pomodoro_duration=3000)
 
@@ -200,9 +211,17 @@ def test_advance_timer_state_transitions_focus_to_short_break(monkeypatch: pytes
     assert needs_broadcast is True
     assert state["focus"] is False
     assert state["sessions_done"] == 1
+    assert state["reward_id"] == 1
     assert state["break"] is True
+    assert state["break_duration"] == 600
     assert state["break_remaining"] == 600
     assert state["pomodoro_remaining"] == 3000
+
+    backend_main_module.advance_timer_state(state)
+
+    assert state["sessions_done"] == 1
+    assert state["reward_id"] == 1
+    assert state["break_remaining"] == 599
 
 
 def test_advance_timer_state_counts_down_break_and_stops_at_zero(monkeypatch: pytest.MonkeyPatch):
@@ -303,16 +322,76 @@ def test_schedule_cleanup_keeps_rejoined_room(monkeypatch: pytest.MonkeyPatch):
         _ = backend_main_module.rooms.pop(room_id, None)
 
 
-def test_advance_timer_state_uses_long_break_on_fourth_session(monkeypatch: pytest.MonkeyPatch):
+def test_redis_cleanup_never_eagerly_deletes_from_worker_local_presence(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    # Redis cleanup is TTL-driven because this worker cannot know whether a
+    # different worker still owns a live socket for the same room.
+    monkeypatch.setattr(backend_main_module, "room_store", object())
+
+    asyncio.run(backend_main_module.schedule_cleanup("shared"))
+
+
+def test_fourth_focus_completion_still_uses_ten_minute_break(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(backend_main_module, "get_celestial_state", celestial_stub)
-    state = make_timer_state(focus=True, pomodoro_remaining=1, sessions_done=3)
+    state = make_timer_state(focus=True, pomodoro_remaining=1, sessions_done=3, reward_id=3)
 
     needs_broadcast = backend_main_module.advance_timer_state(state)
 
     assert needs_broadcast is True
     assert state["sessions_done"] == 4
+    assert state["reward_id"] == 4
     assert state["break"] is True
-    assert state["break_remaining"] == 1500
+    assert state["break_duration"] == 600
+    assert state["break_remaining"] == 600
+
+
+def test_elapsed_catch_up_can_cross_focus_and_entire_break_with_one_reward(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(backend_main_module, "get_celestial_state", celestial_stub)
+    state = make_timer_state(focus=True, pomodoro_remaining=2)
+
+    changed = backend_main_module.advance_timer_state(state, 603)
+
+    assert changed is True
+    assert state["focus"] is False
+    assert state["break"] is False
+    assert state["break_remaining"] == 0
+    assert state["sessions_done"] == 1
+    assert state["reward_id"] == 1
+
+
+def test_focus_cancel_does_not_issue_reward(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(backend_main_module, "get_celestial_state", celestial_stub)
+    state = make_timer_state(focus=True, pomodoro_remaining=1, sessions_done=2, reward_id=2)
+
+    asyncio.run(backend_main.handle(state, {"type": "focus_cancel"}))
+
+    assert state["focus"] is False
+    assert state["break"] is False
+    assert state["sessions_done"] == 2
+    assert state["reward_id"] == 2
+
+
+def test_skip_break_returns_idle_without_revoking_reward(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(backend_main_module, "get_celestial_state", celestial_stub)
+    state = make_timer_state(
+        break_=True,
+        break_remaining=123,
+        sessions_done=4,
+        reward_id=4,
+    )
+
+    asyncio.run(backend_main.handle(state, {"type": "skip_break"}))
+
+    assert state["focus"] is False
+    assert state["paused"] is False
+    assert state["break"] is False
+    assert state["break_remaining"] == 0
+    assert state["pomodoro_remaining"] == state["pomodoro_duration"]
+    assert state["sessions_done"] == 4
+    assert state["reward_id"] == 4
 
 
 def test_handle_time_override_accepts_none_and_iso(monkeypatch: pytest.MonkeyPatch):
@@ -371,24 +450,30 @@ def test_handle_set_duration_accepts_boundary_minutes(minutes: int, monkeypatch:
 def test_handle_ignores_unknown_message_type(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(backend_main_module, "get_celestial_state", celestial_stub)
     state = backend_main.make_state()
-    before = make_timer_state(
-        focus=state["focus"],
-        paused=state["paused"],
-        pomodoro_remaining=state["pomodoro_remaining"],
-        pomodoro_duration=state["pomodoro_duration"],
-        break_=state["break"],
-        break_remaining=state["break_remaining"],
-        sessions_done=state["sessions_done"],
-        time_override=state["time_override"],
-        celestial=state["celestial"],
-        music_playing=state["music"]["playing"],
-        video_id=state["music"]["video_id"],
-    )
+    before = json.loads(json.dumps(state))
 
     async def run() -> None:
         await backend_main.handle(state, {"type": "not_a_real_type", "x": 1})
 
     asyncio.run(run())
+
+    assert state == before
+
+
+@pytest.mark.parametrize(
+    "msg",
+    [
+        {"type": "music_play"},
+        {"type": "music_pause"},
+        {"type": "music_skip", "video_id": "dQw4w9WgXcQ"},
+    ],
+)
+def test_handle_ignores_retired_music_commands(msg: dict[str, object], monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(backend_main_module, "get_celestial_state", celestial_stub)
+    state = backend_main.make_state()
+    before = json.loads(json.dumps(state))
+
+    asyncio.run(backend_main.handle(state, msg))
 
     assert state == before
 

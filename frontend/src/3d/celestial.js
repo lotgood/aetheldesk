@@ -739,10 +739,9 @@ export function createCelestialSystem(scene) {
       currentProgress = Math.max(0, Math.min(1, 1 - state.pomodoro_remaining / state.pomodoro_duration));
       satOrbitGroup.visible = true;
     } else if (state.break) {
-      // BackendState deliberately stores only break_remaining. Match the UI's
-      // contract: every fourth completed session earns the 25-minute long
-      // break; all other breaks are 10 minutes.
-      const breakDuration = state.sessions_done % 4 === 0 ? 1500 : 600;
+      const breakDuration = Number.isFinite(state.break_duration) && state.break_duration > 0
+        ? state.break_duration
+        : 600;
       currentProgress = Math.max(0, Math.min(1, 1 - state.break_remaining / breakDuration));
       satOrbitGroup.visible = true;
     } else {

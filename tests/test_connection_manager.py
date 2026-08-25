@@ -60,6 +60,28 @@ def test_disconnect_reports_when_room_becomes_empty():
     assert manager.room_ids() == ()
 
 
+def test_state_broadcast_never_regresses_below_noted_revision():
+    manager = LocalConnectionManager()
+    websocket = DummyWebSocket()
+    manager.connect("room-a", cast(WebSocket, websocket))
+    manager.note_state_revision("room-a", 4)
+
+    async def run() -> None:
+        await manager.broadcast_json("room-a", {"type": "state", "data": {"revision": 3}})
+        await manager.broadcast_json("room-a", {"type": "state", "data": {"revision": 5}})
+        await manager.broadcast_json("room-a", {"type": "state", "data": {"revision": 4}})
+
+    asyncio.run(run())
+
+    assert [json.loads(message)["data"]["revision"] for message in websocket.messages] == [5]
+
+    assert manager.disconnect("room-a", cast(WebSocket, websocket)) is True
+    replacement = DummyWebSocket()
+    manager.connect("room-a", cast(WebSocket, replacement))
+    asyncio.run(manager.broadcast_json("room-a", {"type": "state", "data": {"revision": 0}}))
+    assert json.loads(replacement.messages[0])["data"]["revision"] == 0
+
+
 def test_json_payloads_do_not_contain_websocket_objects():
     manager = LocalConnectionManager()
     websocket = cast(WebSocket, DummyWebSocket())
