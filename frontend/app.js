@@ -1,31 +1,58 @@
 import { createSceneController } from "./scenes.js";
-import { byId, createFocusTrap, setHiddenInteraction } from "./src/dom.js";
+import { byId, createFocusTrap, setHiddenInteraction, setModalIsolation } from "./src/dom.js";
 import { createDisplaySettings } from "./src/display-settings.js";
 import { createMusicController } from "./src/music-youtube.js";
 import { createRoomAuth } from "./src/room-auth.js";
 import { createRoomRenderer, playChime, startClock, tickClock, tickDate } from "./src/room-renderer.js";
 import { createRoomSocket } from "./src/room-websocket.js";
+import { createScenePicker } from "./src/scene-picker.js";
 import { createPlaylistState } from "./src/storage.js";
 import { createTimerControls } from "./src/timer-controls.js";
 
 const ROOM_ID = location.pathname.split("/").pop().toUpperCase();
 byId("room-label").textContent = `# ${ROOM_ID}`;
+byId("room-label").title = ROOM_ID;
+byId("room-label").setAttribute("aria-label", `방 코드 ${ROOM_ID}`);
+byId("btn-copy-room").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(ROOM_ID);
+    byId("room-status").textContent = `방 코드 ${ROOM_ID}을 복사했습니다.`;
+  } catch (_) {
+    byId("room-status").textContent = `방 코드 ${ROOM_ID}을 선택해 복사해 주세요.`;
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(byId("room-label"));
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+});
 
 const playlist = createPlaylistState();
 let currentState = null;
 
+const roomStatus = byId("room-status");
+let roomStatusTimer = null;
+new MutationObserver(() => {
+  clearTimeout(roomStatusTimer);
+  if (!roomStatus.textContent.trim()) return;
+  roomStatusTimer = setTimeout(() => { roomStatus.textContent = ""; }, 3600);
+}).observe(roomStatus, { childList: true, characterData: true, subtree: true });
+
 const isTouch = navigator.maxTouchPoints > 1;
 if (isTouch) document.body.classList.add("touch");
 
-const sceneController = createSceneController();
+const roomStage = document.body;
+const sceneController = createSceneController({ container: roomStage });
 createDisplaySettings({ sceneController, statusEl: byId("room-status") });
-const renderer = createRoomRenderer({ sceneController });
+createScenePicker({ sceneController, statusEl: byId("room-status") });
+const renderer = createRoomRenderer({ sceneController, container: roomStage });
 let socket;
 const auth = createRoomAuth(ROOM_ID, () => socket.reconnectNow());
 socket = createRoomSocket({
   roomId: ROOM_ID,
   connDot: byId("conn-dot"),
   connStatus: byId("conn-status"),
+  connCopy: byId("conn-copy"),
   auth: {
     show(message) {
       socket?.clearReconnect();
@@ -70,17 +97,6 @@ function applyState(state) {
 window.addEventListener("resize", () => renderer.resetForResize(currentState));
 startClock();
 
-if (!isTouch) {
-  const ctrl = byId("controls");
-  ctrl.style.opacity = "0";
-  let idleTimer;
-  document.addEventListener("mousemove", () => {
-    ctrl.style.opacity = "1";
-    clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => { ctrl.style.opacity = "0"; }, 3000);
-  });
-}
-
 byId("btn-locate").addEventListener("click", () => {
   const status = byId("room-status");
   if (!navigator.geolocation) {
@@ -98,20 +114,25 @@ byId("btn-locate").addEventListener("click", () => {
 });
 
 function openExitConfirm() {
+  window.dispatchEvent(new CustomEvent("aethel:panel-open", { detail: { id: "exit-confirm" } }));
   byId("exit-confirm").style.display = "flex";
   setHiddenInteraction(byId("exit-confirm"), false);
+  document.body.classList.add("panel-open");
+  setModalIsolation(byId("exit-confirm"), true);
   byId("room-status").textContent = "진행 중인 집중을 끝내고 나갈지 확인해 주세요.";
   exitTrap.activate();
   byId("action-bar").style.display = "none";
 }
 
-function closeExitConfirm() {
+function closeExitConfirm({ restoreFocus = true } = {}) {
+  setModalIsolation(byId("exit-confirm"), false);
   exitTrap.deactivate({ restore: false });
   setHiddenInteraction(byId("exit-confirm"), true);
   byId("exit-confirm").style.display = "none";
   byId("action-bar").style.display = "";
+  document.body.classList.remove("panel-open");
   byId("room-status").textContent = "나가기를 취소했습니다.";
-  setTimeout(() => byId("btn-exit").focus(), 500);
+  if (restoreFocus) setTimeout(() => byId("btn-exit").focus(), 120);
 }
 
 byId("btn-exit").addEventListener("click", () => {
@@ -124,6 +145,11 @@ byId("btn-exit").addEventListener("click", () => {
 });
 byId("btn-exit-yes").addEventListener("click", () => { location.href = "/"; });
 byId("btn-exit-no").addEventListener("click", closeExitConfirm);
+window.addEventListener("aethel:panel-open", event => {
+  if (event.detail?.id !== "exit-confirm" && byId("exit-confirm").style.display !== "none") {
+    closeExitConfirm({ restoreFocus: false });
+  }
+});
 
 setHiddenInteraction(byId("exit-confirm"), true);
 socket.connect();

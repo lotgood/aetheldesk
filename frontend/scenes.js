@@ -1,4 +1,5 @@
 // ─── 3D Scene Controller & Three.js Integration ──────────────────────────────
+import * as THREE from "three";
 import {
   readScene,
   storeScene,
@@ -13,48 +14,155 @@ import { createCelestialSystem } from "./src/3d/celestial.js";
 import { createSceneManager } from "./src/3d/scenes/scene-manager.js";
 import { createSpatialAudio } from "./src/3d/spatial-audio.js";
 import { createAtmosphere } from "./src/3d/atmosphere.js";
+import { prefersReducedMotion } from "./src/3d/motion.js";
 
-export const SCENES = ["sky", "city", "beach", "forest"];
-const SCENE_LABELS = { sky: "하늘", city: "도시", beach: "해변", forest: "숲" };
-let activeScene = readScene("sky");
+export const SCENES = Object.freeze(["sky", "city", "forest"]);
+export const SCENE_LABELS = Object.freeze({ sky: "해변 하늘", city: "도시", forest: "숲" });
+export function normalizeSceneName(name) {
+  // Migrate the retired standalone beach selection into the unified coast.
+  if (name === "beach") return "sky";
+  return SCENES.includes(name) ? name : "sky";
+}
+const storedScene = readScene("sky");
+let activeScene = normalizeSceneName(storedScene);
+if (storedScene !== activeScene) storeScene(activeScene);
 let lastCelestial = null;
 let lastState = null;
 
 let engine = null;
+let sceneContainer = document.body;
 let focusActive = false; // drives the camera push-in
 let skyDome = null;
 let celestial = null;
 let sceneManager = null;
 let spatialAudio = null;
+let initFailed = false;
+let sceneTransitionToken = 0;
+let runtimeFallbackScheduled = false;
+let sceneMetricPoll = 0;
+const sceneChangeListeners = new Set();
 const atmosphere = createAtmosphere();
-function prefersReducedMotion() {
-  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+// A celestial body has two positions by design: a camera-composed sprite that
+// stays visible, and a hemispherical key-light position that preserves the
+// real solar elevation. Post shafts need the former; scene shading needs the
+// latter.
+const activeVisualLightPosition = new THREE.Vector3();
+const activeSceneLightPosition = new THREE.Vector3();
+
+function commitActiveScene(
+  resolvedName,
+  { requestedName = resolvedName, reason = "selection", playAudio = true, forcedFallback = false } = {},
+) {
+  const resolved = normalizeSceneName(resolvedName);
+  activeScene = resolved;
+  storeScene(resolved);
+  document.body.dataset.scene = resolved === "sky" ? "" : resolved;
+  // Stock UnrealBloomPass intermittently presents an empty frame when fed the
+  // desktop ocean shader. The unified coast owns that ocean now, so preserve
+  // the user's preference but gate only this scene; corona, shafts and grading
+  // remain active and city/forest restore bloom automatically.
+  engine?.setBloomSuppressed(Boolean(sceneManager?.getActiveSceneProfile().suppressBloom));
+  if (playAudio) spatialAudio?.startSceneAmbience(resolved);
+
+  const detail = {
+    requested: normalizeSceneName(requestedName),
+    active: resolved,
+    fallback: forcedFallback || resolved !== normalizeSceneName(requestedName),
+    reason,
+  };
+  for (const listener of sceneChangeListeners) listener(detail);
+  return resolved;
+}
+
+function scheduleRuntime2DFallback() {
+  if (runtimeFallbackScheduled || !engine) return;
+  runtimeFallbackScheduled = true;
+  // Do not dispose the composer from inside its own render callback. The next
+  // animation frame safely tears the failed 3D path down and reveals the
+  // existing DOM sky fallback.
+  requestAnimationFrame(() => {
+    runtimeFallbackScheduled = false;
+    const requestedScene = activeScene;
+    engine?.destroy();
+    engine = null;
+    skyDome = null;
+    celestial = null;
+    sceneManager = null;
+    initFailed = true;
+    document.body.classList.remove("is-3d");
+    commitActiveScene("sky", {
+      requestedName: requestedScene,
+      reason: "engine-fallback",
+      playAudio: true,
+      forcedFallback: true,
+    });
+  });
+}
+
+function reconcileManagedScene(reason = "runtime-fallback") {
+  if (!sceneManager) return activeScene;
+  const resolved = normalizeSceneName(sceneManager.getActiveSceneName());
+  if (resolved === activeScene) return resolved;
+  return commitActiveScene(resolved, { requestedName: activeScene, reason, playAudio: true });
+}
+
+function syncSceneMetrics() {
+  if (!engine || !sceneManager || !celestial) return;
+  const aspect = engine.camera.aspect || 16 / 9;
+  const pixelRatio = engine.renderer.getPixelRatio();
+  celestial.setViewportAspect(aspect);
+  celestial.setPixelRatio(pixelRatio);
+  sceneManager.setViewportAspect(aspect);
+  sceneManager.setPixelRatio(pixelRatio);
+  sceneManager.setShaftsEnabled(engine.getEffectiveFX().shafts);
 }
 
 function init3D() {
-  if (engine) return;
+  if (engine || initFailed) return;
+  let nextEngine = null;
   try {
-    engine = create3DEngine(document.body);
-    engine.setAtmosphere(atmosphere);
-    skyDome = createSkyDome(engine.scene);
-    celestial = createCelestialSystem(engine.scene);
-    sceneManager = createSceneManager(engine.scene);
+    nextEngine = create3DEngine(sceneContainer, {
+      onFatal: () => scheduleRuntime2DFallback(),
+      // Do not remove the complete 2D sky until WebGL has produced a real
+      // composited frame. Scene construction can finish long before a cold
+      // driver has compiled the first shader set.
+      onFirstFrame: () => {
+        if (!initFailed && engine === nextEngine) document.body.classList.add("is-3d");
+      },
+    });
+    nextEngine.setAtmosphere(atmosphere);
+    const nextSkyDome = createSkyDome(nextEngine.scene);
+    const nextCelestial = createCelestialSystem(nextEngine.scene);
+    const nextSceneManager = createSceneManager(nextEngine.scene);
+    if (!nextSceneManager.isAvailable()) throw new Error("No renderable 3D fallback scene is available");
     // Persisted display settings apply before the first frame so a
     // low-tier device never renders a frame it cannot afford.
-    engine.setQuality(readDisplayQuality());
+    nextEngine.setQuality(readDisplayQuality());
+
+    engine = nextEngine;
+    skyDome = nextSkyDome;
+    celestial = nextCelestial;
+    sceneManager = nextSceneManager;
     const savedFX = readDisplayFX();
     if (savedFX) applyFX(savedFX);
     spatialAudio = createSpatialAudio();
+    syncSceneMetrics();
 
-    sceneManager.switchScene(activeScene);
-
-    // Every 3D layer built successfully: only now hide the legacy 2D
-    // sun/moon/stars/clouds overlays. Flipping this before construction
-    // would leave a blank void whenever a scene throws.
-    document.body.classList.add("is-3d");
+    const requestedScene = activeScene;
+    const resolvedScene = sceneManager.switchScene(requestedScene);
+    commitActiveScene(resolvedScene, {
+      requestedName: requestedScene,
+      reason: resolvedScene === requestedScene ? "initialization" : "construction-fallback",
+      playAudio: false,
+    });
 
     engine.onTick((delta, elapsed) => {
       atmosphere.update(delta);
+      sceneMetricPoll += delta;
+      if (sceneMetricPoll >= 0.5) {
+        sceneMetricPoll = 0;
+        syncSceneMetrics();
+      }
       const grade = atmosphere.current;
 
       // Aerial perspective + filmic exposure follow the same grade as the sky.
@@ -66,82 +174,147 @@ function init3D() {
       celestial.update(delta, elapsed, atmosphere);
       sceneManager.update(delta, elapsed, atmosphere);
 
-    if (celestial.sunGroup) {
-      skyDome.setSunPosition(celestial.sunGroup.position);
-      const lightPos = atmosphere.isNight ? celestial.moonGroup.position : celestial.sunGroup.position;
-      // Scenes that do their own specular (water glitter, sand mica) need
-      // the live light direction, not just the graded colours.
-      sceneManager.setLightDirection(lightPos);
-      // The shafts pass needs the same body in screen space.
-      engine.setLightSource(lightPos);
-    }
+      if (!sceneManager.isAvailable()) {
+        scheduleRuntime2DFallback();
+        return;
+      }
+
+      if (celestial.sunGroup) {
+        skyDome.setSunPosition(celestial.sunGroup.position);
+        // Palette, props and celestial opacity all ease between time states;
+        // the active light direction must follow the same curve. Selecting a
+        // raw sun/moon endpoint at elevation 0 made shadows, water glitter and
+        // shafts jump across the entire sky during a time-slider change.
+        activeVisualLightPosition
+          .copy(celestial.moonGroup.position)
+          .lerp(celestial.sunGroup.position, atmosphere.daylight);
+        activeSceneLightPosition
+          .copy(celestial.moonLight.position)
+          .lerp(celestial.sunLight.position, atmosphere.daylight);
+        // Scenes that do their own specular (water glitter, sand mica) need
+        // the physical light direction, not the perspective-compressed sprite
+        // location used to keep the celestial body inside the frame.
+        sceneManager.setLightDirection(activeSceneLightPosition);
+        // The shafts pass needs the same body in screen space.
+        engine.setLightSource(activeVisualLightPosition);
+        engine.setShadowSource(celestial.keyLight);
+      }
+      if (!sceneManager.isAvailable()) {
+        scheduleRuntime2DFallback();
+        return;
+      }
+      reconcileManagedScene();
 
       // Cinematic push-in while a focus/break session is running
-      const targetFov = focusActive ? 52.5 : 55;
+      const reducedMotion = prefersReducedMotion();
+      const targetFov = focusActive && !reducedMotion ? 52.5 : 55;
       if (Math.abs(engine.camera.fov - targetFov) > 0.02) {
-        engine.camera.fov += (targetFov - engine.camera.fov) * (1 - Math.exp(-2.6 * delta));
+        engine.camera.fov = reducedMotion
+          ? targetFov
+          : engine.camera.fov + (targetFov - engine.camera.fov) * (1 - Math.exp(-2.6 * delta));
         engine.camera.updateProjectionMatrix();
       }
     });
   } catch (err) {
+    initFailed = true;
+    nextEngine?.destroy();
+    engine = null;
+    skyDome = null;
+    celestial = null;
+    sceneManager = null;
+    commitActiveScene("sky", {
+      requestedName: activeScene,
+      reason: "engine-fallback",
+      playAudio: false,
+    });
+    document.body.classList.remove("is-3d");
     console.error("Failed to initialize 3D Engine:", err);
   }
 }
 
-(function initSceneBtn() {
-  const btn = document.getElementById("btn-scene");
-  if (btn) {
-    btn.textContent = `◈ ${SCENE_LABELS[activeScene]}`;
-    btn.setAttribute("aria-label", `장면 바꾸기: ${SCENE_LABELS[activeScene]}`);
+document.body.dataset.scene = activeScene === "sky" ? "" : activeScene;
+
+async function switchScene(name) {
+  const requestedName = normalizeSceneName(name);
+  const token = ++sceneTransitionToken;
+  if (requestedName === activeScene && sceneManager) {
+    if (engine?.canvas) engine.canvas.style.opacity = "1";
+    return activeScene;
   }
-  document.body.dataset.scene = activeScene === "sky" ? "" : activeScene;
-})();
 
-function switchScene(name) {
-  if (!SCENES.includes(name)) return;
-
-  const apply = () => {
-    activeScene = name;
-    storeScene(name);
-    document.body.dataset.scene = name === "sky" ? "" : name;
-
-    const btn = document.getElementById("btn-scene");
-    if (btn) {
-      btn.textContent = `◈ ${SCENE_LABELS[name]}`;
-      btn.setAttribute("aria-label", `장면 바꾸기: ${SCENE_LABELS[name]}`);
-    }
-    const status = document.getElementById("room-status");
-    if (status) status.textContent = `${SCENE_LABELS[name]} 장면으로 바꿨습니다.`;
-
-    if (sceneManager) {
-      sceneManager.switchScene(name);
-    }
-    if (spatialAudio) {
-      spatialAudio.startSceneAmbience(name);
-    }
+  const transitionEngine = engine;
+  const transitionManager = sceneManager;
+  if (!transitionEngine || !transitionManager) {
+    const resolvedName = sceneManager ? sceneManager.switchScene(requestedName) : "sky";
+    const reason = !sceneManager
+      ? "engine-fallback"
+      : resolvedName === requestedName
+        ? "selection"
+        : "construction-fallback";
+    commitActiveScene(resolvedName, { requestedName, reason, playAudio: true });
     if (lastCelestial) {
       renderScene(lastCelestial, lastState);
     }
-  };
-
-  // Quick dim-and-reveal so scene swaps read as a crossfade instead of a cut.
-  if (!engine || prefersReducedMotion()) {
-    apply();
-    return;
+    return resolvedName;
   }
-  const canvas = engine.canvas;
-  canvas.style.transition = "opacity 0.25s ease";
-  canvas.style.opacity = "0.3";
-  setTimeout(() => {
-    apply();
-    canvas.style.opacity = "1";
-  }, 170);
-}
 
-function bindSceneButton() {
-  document.getElementById("btn-scene")?.addEventListener("click", () => {
-    switchScene(SCENES[(SCENES.indexOf(activeScene) + 1) % SCENES.length]);
-  });
+  const isCurrentTransition = () =>
+    token === sceneTransitionToken
+    && engine === transitionEngine
+    && sceneManager === transitionManager
+    && transitionEngine.isOperational();
+
+  const canvas = transitionEngine.canvas;
+  canvas.style.transition = "opacity 0.25s ease";
+  canvas.style.opacity = "1";
+
+  let prepared = transitionManager.prepareScene(requestedName);
+  try {
+    if (prepared.scene?.group) {
+      // Compile materials against the incoming scene's exact local-light
+      // signature. The manager swaps group visibility only for Three's
+      // synchronous traversal, then immediately restores the live scene while
+      // KHR_parallel_shader_compile finishes in the background.
+      const compilation = transitionManager.withPreparedSceneVisibleForCompilation(prepared, () =>
+        // Compile the complete root while only the incoming scene group is
+        // visible. That gives Three the final light counts exactly once,
+        // including the forest's local fire light.
+        transitionEngine.renderer.compileAsync(transitionEngine.scene, transitionEngine.camera),
+      );
+      await compilation;
+    }
+  } catch (error) {
+    if (!isCurrentTransition()) return activeScene;
+    console.error(`[AethelDesk 3D] ${requestedName} scene failed during shader preparation.`, error);
+    transitionManager.markPreparationFailed(prepared, error);
+    if (!transitionManager.isAvailable()) {
+      scheduleRuntime2DFallback();
+      return "sky";
+    }
+    prepared = transitionManager.prepareScene("sky", true);
+  }
+
+  if (!isCurrentTransition()) return activeScene;
+
+  // Dim only after the incoming programs are ready. Commit, render, and wait
+  // for the following display turn before restoring full opacity, so a lazy
+  // scene can never expose an unrendered canvas.
+  if (!prefersReducedMotion()) {
+    canvas.style.opacity = "0.78";
+    await new Promise(resolve => setTimeout(resolve, 80));
+    if (!isCurrentTransition()) return transitionEngine.isOperational() ? activeScene : "sky";
+  }
+
+  const stableRender = transitionEngine.afterNextStableRender();
+  const resolvedName = transitionManager.activatePreparedScene(prepared);
+  const reason = resolvedName === requestedName ? "selection" : "construction-fallback";
+  commitActiveScene(resolvedName, { requestedName, reason, playAudio: true });
+  if (lastCelestial) renderScene(lastCelestial, lastState);
+  const frameReady = await stableRender;
+
+  if (!frameReady || !isCurrentTransition()) return transitionEngine.isOperational() ? activeScene : "sky";
+  canvas.style.opacity = "1";
+  return resolvedName;
 }
 
 function renderScene(c, state) {
@@ -161,7 +334,10 @@ function renderScene(c, state) {
   }
   if (sceneManager) {
     sceneManager.updateCelestial(c, atmosphere);
+    if (sceneManager.isAvailable()) reconcileManagedScene();
+    else scheduleRuntime2DFallback();
   }
+  if (c && Number.isFinite(c.elevation)) engine?.markContentReady();
 }
 
 function resetForResize() {
@@ -175,11 +351,12 @@ function applyFX(fx) {
   const { mica, ...engineFX } = fx;
   if (engine) engine.setFX(engineFX);
   if (typeof mica === "boolean" && sceneManager) sceneManager.setMicaEnabled(mica);
+  if (engine && sceneManager) sceneManager.setShaftsEnabled(engine.getEffectiveFX().shafts);
 }
 
-export function createSceneController() {
+export function createSceneController({ container = document.body } = {}) {
+  sceneContainer = container;
   init3D();
-  bindSceneButton();
 
   return {
     render: renderScene,
@@ -191,11 +368,23 @@ export function createSceneController() {
     resetForResize,
     switchScene,
     getActiveScene: () => activeScene,
+    onSceneChange: (listener) => {
+      sceneChangeListeners.add(listener);
+      return () => sceneChangeListeners.delete(listener);
+    },
     getEngine: () => engine,
+    getSceneHealth: () => sceneManager?.getHealth() || {
+      active: activeScene,
+      ready: [],
+      failed: initFailed ? ["engine"] : [],
+    },
     getSpatialAudio: () => spatialAudio,
     setQuality: (name) => {
       storeDisplayQuality(name);
-      if (engine) engine.setQuality(name);
+      if (engine) {
+        engine.setQuality(name);
+        syncSceneMetrics();
+      }
     },
     getQuality: () => (engine ? engine.getQuality() : { mode: readDisplayQuality(), tier: null }),
     setFXOptions: (fx) => {
@@ -203,6 +392,9 @@ export function createSceneController() {
       applyFX(fx);
     },
     getFXOptions: () => readDisplayFX() || {},
+    getPreferredFX: () => (engine
+      ? engine.getPreferredFX()
+      : { bloom: true, shafts: true, grain: 1, shadows: true }),
     // Effective state for the settings UI: user override where present,
     // the active tier's default otherwise. Mica is scene-side, default on.
     getEffectiveFX: () => {
@@ -214,12 +406,3 @@ export function createSceneController() {
     },
   };
 }
-
-
-
-
-
-
-
-
-

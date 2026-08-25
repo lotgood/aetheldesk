@@ -5,6 +5,7 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { createSunShaftsPass } from "./sun-shafts.js";
+import { prefersReducedMotion } from "./motion.js";
 
 // ─── Post / grade ────────────────────────────────────────────────────────
 // A forward render of untextured geometry reads flat no matter how good the
@@ -30,6 +31,7 @@ const GradeShader = {
     uShadowTint: { value: new THREE.Color(0.03, 0.052, 0.084) },
     uHighTint: { value: new THREE.Color(1.045, 1.0, 0.938) },
     uCA: { value: 0.55 },
+    uTexelSize: { value: new THREE.Vector2(1, 1) },
   },
   vertexShader: `
     varying vec2 vUv;
@@ -49,6 +51,7 @@ const GradeShader = {
     uniform vec3  uShadowTint;
     uniform vec3  uHighTint;
     uniform float uCA;
+    uniform vec2  uTexelSize;
     varying vec2 vUv;
 
     float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
@@ -65,10 +68,13 @@ const GradeShader = {
       // pixel at the corners. Enough to read as a lens, not as a defect.
       vec3 c;
       if (uCA > 0.0001) {
-        float k = uCA * 0.0026 * (0.25 + r2 * 3.0);
-        c.r = texture2D(tDiffuse, vUv + ctr * k).r;
+        float radius = sqrt(r2);
+        vec2 radial = r2 > 1e-8 ? ctr / radius : vec2(0.0);
+        float edge = smoothstep(0.0, 0.70710678, radius);
+        vec2 offset = radial * uTexelSize * (uCA * 0.5 * edge);
+        c.r = texture2D(tDiffuse, vUv + offset).r;
         c.g = texture2D(tDiffuse, vUv).g;
-        c.b = texture2D(tDiffuse, vUv - ctr * k).b;
+        c.b = texture2D(tDiffuse, vUv - offset).b;
       } else {
         c = texture2D(tDiffuse, vUv).rgb;
       }
@@ -91,8 +97,11 @@ const GradeShader = {
       // Anchoring the floor is what gives the frame somewhere to rest.
       c = max(c - uBlack, vec3(0.0)) / max(1.0 - uBlack, 1e-3);
 
-      // Saturation just past neutral.
-      c = mix(vec3(luma(c)), c, uSaturation);
+      // Saturation just past neutral. Recompute luminance after the shoulder
+      // and black-point operations; using the pre-grade luma biased shadow
+      // colors and made long viewing sessions feel artificially tinted.
+      float gradedLuma = luma(c);
+      c = mix(vec3(gradedLuma), c, uSaturation);
 
       // Vignette.
       c *= 1.0 - uVignette * smoothstep(0.18, 0.86, r2 * 1.35);
@@ -100,7 +109,8 @@ const GradeShader = {
       // Grain: coarser and stronger at night, and pulled back in highlights
       // so daylight skies stay clean.
       float n = hash12(gl_FragCoord.xy + fract(uTime) * vec2(311.7, 127.1));
-      float amt = uGrain * (0.008 + 0.018 * uNight) * (1.15 - luma(c) * 0.55);
+      // Fine-grain stock: exactly 45% of the previous day/night amplitude.
+      float amt = uGrain * (0.0036 + 0.0081 * uNight) * (1.15 - luma(c) * 0.55);
       c += (n - 0.5) * amt;
 
       gl_FragColor = vec4(max(c, 0.0), 1.0);
@@ -108,27 +118,64 @@ const GradeShader = {
   `,
 };
 
+/**
+ * RGBA16F renderability is optional even on WebGL 2. Query the live renderer
+ * instead of assuming the texture type from browser/version strings.
+ */
+export function resolvePostTargetProfile(renderer) {
+  const hasExtension = renderer?.extensions?.has?.bind(renderer.extensions);
+  let hdr = false;
+  if (hasExtension) {
+    try {
+      hdr = hasExtension("EXT_color_buffer_float") || hasExtension("EXT_color_buffer_half_float");
+    } catch {
+      hdr = false;
+    }
+  }
+  return {
+    hdr,
+    textureType: hdr ? THREE.HalfFloatType : THREE.UnsignedByteType,
+  };
+}
+
 export function createPostFX({ renderer, scene, camera }) {
   const size = renderer.getSize(new THREE.Vector2());
+  const initialPixelRatio = renderer.getPixelRatio();
+  const effectSize = new THREE.Vector2(
+    Math.max(1, Math.floor(size.x * initialPixelRatio)),
+    Math.max(1, Math.floor(size.y * initialPixelRatio)),
+  );
+  const targetProfile = resolvePostTargetProfile(renderer);
 
-  const composer = new EffectComposer(renderer);
-  composer.setPixelRatio(renderer.getPixelRatio());
-  composer.setSize(size.x, size.y);
+  // Keep the composer in physical pixels with DPR=1. This lets a renderer
+  // size+DPR change resize every target exactly once instead of
+  // setPixelRatio() reallocating at the old size before setSize() runs.
+  const composerTarget = new THREE.WebGLRenderTarget(effectSize.x, effectSize.y, {
+    type: targetProfile.textureType,
+    depthBuffer: true,
+  });
+  const composer = new EffectComposer(renderer, composerTarget);
+  composer.setPixelRatio(1);
 
-  composer.addPass(new RenderPass(scene, camera));
+  const renderPass = new RenderPass(scene, camera);
+  composer.addPass(renderPass);
 
   // Bloom is atmosphere, not a glow filter: low strength, high threshold, so
   // only the sun, the moon and the fire actually bleed.
   // Threshold sits high on purpose: a daylight sky is already near 1.0, so a
   // low threshold makes the whole dome bloom into itself and the frame goes
   // white. Only emissive bodies and the fire should clear this bar.
-  const bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.22, 0.6, 1.05);
+  const bloom = new UnrealBloomPass(effectSize, 0.22, 0.6, 1.05);
+  bloom.enabled = targetProfile.hdr;
   composer.addPass(bloom);
 
   // Sun shafts sit after bloom so the disc/corona bleed feeds the rays, and
   // before the grade so the added light is split-toned and vignetted like
   // everything else.
-  const shafts = createSunShaftsPass(size.x, size.y);
+  const shafts = createSunShaftsPass(effectSize.x, effectSize.y, {
+    textureType: targetProfile.textureType,
+  });
+  shafts.pass.enabled = targetProfile.hdr;
   composer.addPass(shafts.pass);
 
   const grade = new ShaderPass(GradeShader);
@@ -136,12 +183,17 @@ export function createPostFX({ renderer, scene, camera }) {
 
   // Applies the renderer's ACES tone mapping and sRGB conversion once, after
   // grading, instead of the render pass doing it before.
-  composer.addPass(new OutputPass());
+  const output = new OutputPass();
+  composer.addPass(output);
+  grade.uniforms.uTexelSize.value.set(1 / effectSize.x, 1 / effectSize.y);
 
   const scratch = new THREE.Color();
   const lightWorld = new THREE.Vector3();
   const lightView = new THREE.Vector3();
   let lightWorldSet = false;
+  let composerWidth = effectSize.x;
+  let composerHeight = effectSize.y;
+  let disposed = false;
 
   // User/quality-tier overrides. Base values still come from the atmosphere
   // grade every frame; these multiply or gate them.
@@ -153,7 +205,7 @@ export function createPostFX({ renderer, scene, camera }) {
     if (typeof next.shafts === "boolean") options.shafts = next.shafts;
     if (typeof next.grain === "number") options.grain = next.grain;
     if (typeof next.ca === "number") options.ca = next.ca;
-    bloom.enabled = options.bloom;
+    bloom.enabled = targetProfile.hdr && options.bloom;
   }
 
   /** scenes.js feeds the active celestial body (sun by day, moon at night). */
@@ -162,14 +214,19 @@ export function createPostFX({ renderer, scene, camera }) {
     lightWorldSet = true;
   }
 
-  function prefersReducedMotion() {
-    return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  }
-
   function setSize(width, height) {
-    composer.setPixelRatio(renderer.getPixelRatio());
-    composer.setSize(width, height);
-    bloom.setSize(width, height);
+    const nextPixelRatio = renderer.getPixelRatio();
+    const physicalWidth = Math.max(1, Math.floor(width * nextPixelRatio));
+    const physicalHeight = Math.max(1, Math.floor(height * nextPixelRatio));
+    if (composerWidth === physicalWidth && composerHeight === physicalHeight) return;
+
+    composer.setSize(physicalWidth, physicalHeight);
+    composerWidth = physicalWidth;
+    composerHeight = physicalHeight;
+    grade.uniforms.uTexelSize.value.set(
+      1 / physicalWidth,
+      1 / physicalHeight,
+    );
   }
 
   function applyGrade(atmosphere) {
@@ -191,17 +248,22 @@ export function createPostFX({ renderer, scene, camera }) {
     // Black point is a daylight tool. At night the frame is already sitting
     // on the floor, and subtracting from it just crushes the moonlit
     // silhouettes into solid black.
-    u.uBlack.value = 0.006 + day * 0.032;
+    // Preserve textured forest floor and asphalt detail behind the UI. The
+    // former black point looked punchy in a still, but crushed the lower half
+    // of the frame during a full focus session.
+    u.uBlack.value = 0.004 + day * 0.018;
 
-    u.uVignette.value = 0.3 + night * 0.28;
-    u.uSaturation.value = 1.1 + night * 0.1;
+    u.uVignette.value = 0.22 + night * 0.19;
+    u.uSaturation.value = 1.1 + night * 0.075;
     u.uGrain.value = (0.85 + night * 0.35) * options.grain;
     u.uCA.value = 0.55 * options.ca;
 
     // Bloom is inverted against daylight: at night a few small emissive
     // bodies can afford to bleed, at noon the whole sky is a light source
     // and any strength at all turns the frame to milk.
-    bloom.strength = 0.16 + night * 0.34;
+    bloom.strength = 0.14 + night * 0.27;
+    bloom.radius = 0.48 + night * 0.12;
+    bloom.threshold = 1.0 + day * 0.08;
   }
 
   // Shafts are a low-sun effect: strong through the golden band, a subtle
@@ -209,7 +271,7 @@ export function createPostFX({ renderer, scene, camera }) {
   // direction to read. Off-screen lights fade out over a generous margin so
   // rays can still lean in from just beyond the frame edge.
   function updateShafts(atmosphere, reducedMotion) {
-    if (!atmosphere || !lightWorldSet || !options.shafts || reducedMotion) {
+    if (!targetProfile.hdr || !atmosphere || !lightWorldSet || !options.shafts || reducedMotion) {
       shafts.pass.enabled = false;
       return;
     }
@@ -233,7 +295,7 @@ export function createPostFX({ renderer, scene, camera }) {
     const elev = atmosphere.elevation;
     const day = atmosphere.daylight;
     const lowSun = 1 - smoothstep(8, 30, elev);
-    const intensity = (day * lowSun * 0.95 + (1 - day) * 0.32) * edgeFade;
+    const intensity = (day * lowSun * 0.7 + (1 - day) * 0.12) * edgeFade;
 
     if (intensity < 0.004) {
       shafts.pass.enabled = false;
@@ -253,12 +315,22 @@ export function createPostFX({ renderer, scene, camera }) {
   }
 
   function dispose() {
+    if (disposed) return;
+    disposed = true;
+    for (const pass of [renderPass, bloom, shafts.pass, grade, output]) pass.dispose();
+    composer.passes.length = 0;
     composer.dispose();
-    bloom.dispose();
-    shafts.pass.dispose();
   }
 
-  return { composer, setSize, setOptions, setLightWorldPosition, render, dispose };
+  return {
+    composer,
+    capabilities: Object.freeze({ hdr: targetProfile.hdr, textureType: targetProfile.textureType }),
+    setSize,
+    setOptions,
+    setLightWorldPosition,
+    render,
+    dispose,
+  };
 }
 
 function smoothstep(edge0, edge1, x) {

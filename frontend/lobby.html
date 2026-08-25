@@ -3,158 +3,140 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#070a12" />
   <title>AethelDesk</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/tailwind.css" />
   <link rel="stylesheet" href="/fonts.css" />
   <link rel="stylesheet" href="/velorah.css" />
   <style>
-    /* Velorah tokens, glass, type helpers and fade-rise come from
-       /velorah.css (shared with the room). Lobby-only styles below. */
-    * { font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
-    body { overflow: hidden; }
+    @import url("/lobby.css");
 
-    /* Wordmark — the lobby's one monumental element. Latin copy, so the
-       serif italic is genuine (no synthetic oblique risk). */
-    .lobby-wordmark {
-      font-family: var(--font-display);
-      font-style: italic;
-      font-weight: 400;
-      font-size: clamp(2.6rem, 6vw, 3.6rem);
-      letter-spacing: 0.02em;
-      line-height: 1.05;
-      text-shadow: 0 0 50px rgba(255,255,255,0.12), 0 2px 18px rgba(0,0,0,0.35);
-    }
-    .lobby-tagline {
-      font-size: 11px;
-      font-weight: 400;
-      letter-spacing: var(--track-hangul);
-      opacity: 0.55;
-    }
-
+    /* Kept page-local because the sky module applies the day state. */
     body.day #pin-input,
-    body.day #btn-start,
-    body.day #code-toggle {
-      color: var(--day-ink);
-    }
-
-    /* Pin input focus glow */
-    #pin-input:focus,
-    #room-input:focus {
-      outline: none;
-      border-bottom-color: rgba(255,255,255,0.85) !important;
-      box-shadow: 0 12px 24px -16px currentColor, 0 0 0 1px transparent;
-    }
-    ::placeholder { color: currentColor; opacity: 0.45; }
-    #code-section {
-      max-height: 0; opacity: 0; overflow: hidden; pointer-events: none;
-      transition: max-height 0.4s ease, opacity 0.4s ease;
-    }
-    #lobby-error {
-      min-height: 1rem;
-      transition: opacity 0.3s ease;
-    }
-    @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after {
-        animation-duration: 0.001ms !important;
-        animation-iteration-count: 1 !important;
-        scroll-behavior: auto !important;
-        transition-duration: 0.001ms !important;
-      }
-    }
+    body.day #code-toggle { color: var(--lobby-text); }
+    body.day #btn-start { color: var(--lobby-gold-ink); }
   </style>
 </head>
-<body class="w-screen h-screen flex items-center justify-center select-none">
+<body>
+  <canvas id="stars" class="sky-layer" aria-hidden="true"></canvas>
+  <canvas id="clouds" class="sky-layer" aria-hidden="true"></canvas>
 
-  <!-- Stars -->
-  <canvas id="stars" class="absolute inset-0 w-full h-full" style="opacity:0;pointer-events:none;transition:opacity 2s ease;"></canvas>
-
-  <!-- Clouds (day only) -->
-  <canvas id="clouds" class="absolute inset-0 w-full h-full" style="pointer-events:none;opacity:0;transition:opacity 2s ease;"></canvas>
-
-  <!-- Sun / Moon arc -->
-  <svg class="absolute inset-0 w-full h-full" style="pointer-events:none;">
+  <svg class="celestial-orbit" aria-hidden="true">
     <defs>
       <radialGradient id="moonGradL" cx="42%" cy="42%" r="50%">
-        <stop offset="0%"   stop-color="#F0F4FF"/>
-        <stop offset="60%"  stop-color="#D0D8F0"/>
-        <stop offset="100%" stop-color="#A8B8D8"/>
+        <stop offset="0%" stop-color="#f3f5ff" />
+        <stop offset="60%" stop-color="#d9def0" />
+        <stop offset="100%" stop-color="#9daac7" />
       </radialGradient>
       <radialGradient id="moonHaloL" cx="50%" cy="50%" r="50%">
-        <stop offset="0%"   stop-color="rgba(220,230,255,0.30)"/>
-        <stop offset="100%" stop-color="rgba(220,230,255,0)"/>
+        <stop offset="0%" stop-color="#dfe8ff" stop-opacity="0.28" />
+        <stop offset="100%" stop-color="#dfe8ff" stop-opacity="0" />
       </radialGradient>
       <filter id="arcBlur" x="-30%" y="-30%" width="160%" height="160%">
         <feGaussianBlur stdDeviation="5" />
       </filter>
     </defs>
-    <path id="arc-glow" fill="none" stroke-width="7" opacity="0.07" stroke-linecap="round" filter="url(#arcBlur)" />
-    <path id="arc-path" fill="none" stroke-width="0.5" opacity="0.15" />
-    <g id="sun-group" style="transform:translate(-200px,-200px);opacity:0;transition:opacity 1.5s ease;">
-      <circle cx="0" cy="0" r="55" fill="#FFB200" opacity="0.12"/>
-      <circle cx="0" cy="0" r="36" fill="#FFCC00" opacity="0.25"/>
-      <circle cx="0" cy="0" r="22" fill="#FFE566" opacity="0.55"/>
-      <circle cx="0" cy="0" r="16" fill="#FFFBE8" opacity="0.95"/>
+    <path id="arc-glow" fill="none" stroke="currentColor" stroke-width="7" opacity="0.06" stroke-linecap="round" filter="url(#arcBlur)" />
+    <path id="arc-path" fill="none" stroke="currentColor" stroke-width="0.5" opacity="0.16" />
+    <g id="sun-group">
+      <circle cx="0" cy="0" r="55" fill="#f2c66d" opacity="0.10" />
+      <circle cx="0" cy="0" r="34" fill="#f2c66d" opacity="0.22" />
+      <circle cx="0" cy="0" r="20" fill="#ffdc91" opacity="0.62" />
+      <circle cx="0" cy="0" r="14" fill="#fff7dd" opacity="0.96" />
     </g>
-    <g id="moon-group" style="transform:translate(-200px,-200px);opacity:1;transition:opacity 1.5s ease;">
-      <circle cx="0" cy="0" r="46" fill="url(#moonHaloL)"/>
-      <circle cx="0" cy="0" r="13" fill="url(#moonGradL)"/>
-      <circle cx="5" cy="-2" r="11" fill="#0B091A" opacity="0.90"/>
+    <g id="moon-group">
+      <circle cx="0" cy="0" r="46" fill="url(#moonHaloL)" />
+      <circle cx="0" cy="0" r="13" fill="url(#moonGradL)" />
+      <circle cx="5" cy="-2" r="11" fill="#0b1020" opacity="0.90" />
     </g>
   </svg>
 
-  <!-- Vignette for depth -->
-  <div class="absolute inset-0" aria-hidden="true"
-    style="pointer-events:none; background: radial-gradient(ellipse at center, transparent 52%, rgba(0,0,0,0.30) 100%);"></div>
+  <div class="sky-vignette" aria-hidden="true"></div>
+  <div class="sky-grain" aria-hidden="true"></div>
 
-  <!-- Content — inherits color from body so day/night tint applies automatically -->
-  <div class="relative z-10 flex flex-col items-center gap-9 animate-fade-rise">
+  <main class="lobby-shell">
+    <section class="lobby-intro animate-fade-rise" aria-labelledby="lobby-title">
+      <div class="observatory-mark" aria-hidden="true">
+        <span class="observatory-mark__star"></span>
+        <span class="observatory-mark__orbit"></span>
+      </div>
 
-    <div class="flex flex-col items-center gap-3">
-      <h1 class="lobby-wordmark" style="opacity:0.92">AethelDesk</h1>
-      <p class="lobby-tagline">같은 하늘 아래, 함께 집중</p>
-    </div>
+      <p class="eyebrow">SHARED CELESTIAL FOCUS</p>
+      <h1 id="lobby-title" class="lobby-wordmark">AethelDesk</h1>
+      <p class="lobby-tagline">같은 하늘 아래,<br /> 각자의 일에 깊이 머무는 시간.</p>
 
-    <div class="flex flex-col items-center gap-5 animate-fade-rise-delay">
-      <label for="pin-input" class="sr-only">방 PIN</label>
-      <input id="pin-input" type="password" inputmode="numeric" autocomplete="off" placeholder="방 PIN"
-        aria-describedby="lobby-error"
-        class="bg-transparent text-center text-sm font-light tracking-[0.3em] outline-none w-36 pb-2"
-        style="border-bottom: 1px solid currentColor; opacity: 0.8; transition: box-shadow .5s ease, opacity .5s ease;" />
-      <button id="btn-start" type="button"
-        class="liquid-glass interactive font-light text-xs uppercase px-12 py-4 rounded-full"
-        style="opacity:0.85; letter-spacing: var(--track-hangul);">
-        시작
-      </button>
-    </div>
+      <div class="quiet-signal" aria-label="AethelDesk 소개">
+        <span class="quiet-signal__line" aria-hidden="true"></span>
+        <span>실시간 하늘</span>
+        <span class="quiet-signal__dot" aria-hidden="true"></span>
+        <span>함께하는 포모도로</span>
+      </div>
+    </section>
 
-    <p id="lobby-error" class="text-xs font-light" role="status" aria-live="polite" aria-atomic="true" style="opacity:0.65; letter-spacing: var(--track-hangul);"></p>
+    <section class="entry-panel animate-fade-rise-delay" aria-labelledby="entry-title">
+      <header class="entry-header">
+        <p class="entry-kicker">FOCUS ROOM</p>
+        <h2 id="entry-title">오늘의 집중을 시작하세요</h2>
+        <p>하나의 PIN으로 새 방을 만들거나, 이미 열린 방에 들어갈 수 있어요.</p>
+      </header>
 
-    <button id="code-toggle"
-      type="button"
-      aria-expanded="false"
-      aria-controls="code-section"
-      class="text-xs font-light hover:opacity-70 transition-opacity duration-300"
-      style="opacity:0.45; letter-spacing: var(--track-hangul);">
-      방 코드로 입장 →
-    </button>
+      <div class="pin-field">
+        <label for="pin-input">방 PIN</label>
+        <div class="field-shell">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7.5 10V7.5a4.5 4.5 0 0 1 9 0V10M6 10h12v10H6z" />
+          </svg>
+          <input id="pin-input" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN 입력"
+            aria-describedby="pin-hint lobby-error" />
+        </div>
+        <p id="pin-hint" class="field-hint">방을 보호할 PIN을 입력해 주세요.</p>
+      </div>
 
-    <div id="code-section" aria-hidden="true">
-      <div class="flex flex-col items-center gap-3 pt-3">
-        <label for="room-input" class="sr-only">방 코드</label>
-        <input id="room-input" type="text" maxlength="8" placeholder="방 코드"
-          aria-describedby="lobby-error" tabindex="-1"
-          class="bg-transparent text-center text-xl font-extralight tracking-[0.3em] uppercase outline-none w-40 pb-2"
-          style="border-bottom: 1px solid currentColor; opacity: 0.9;" />
-        <button id="btn-join"
-          type="button" tabindex="-1"
-          class="text-xs uppercase font-light hover:opacity-100 transition-opacity duration-300"
-          style="opacity:0.5; letter-spacing: var(--track-hangul);">
-          입장
+      <div class="entry-actions">
+        <button id="btn-start" type="button" class="primary-action">
+          <span class="button-copy">
+            <strong>새 방 만들기</strong>
+            <small>방 코드는 자동으로 만들어져요</small>
+          </span>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m9 5 7 7-7 7" />
+          </svg>
+        </button>
+
+        <button id="code-toggle" type="button" class="secondary-action"
+          aria-expanded="false" aria-controls="code-section">
+          <span class="button-copy">
+            <strong>방 코드로 입장</strong>
+            <small>초대받은 코드가 있어요</small>
+          </span>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m8 10 4 4 4-4" />
+          </svg>
         </button>
       </div>
-    </div>
-  </div>
+
+      <div id="code-section" aria-hidden="true">
+        <div class="join-panel">
+          <label for="room-input">방 코드</label>
+          <div class="join-row">
+            <input id="room-input" type="text" maxlength="64" autocomplete="off" autocapitalize="characters"
+              spellcheck="false" placeholder="예: ASTR4" aria-describedby="code-hint lobby-error" tabindex="-1" />
+            <button id="btn-join" type="button" tabindex="-1">입장하기</button>
+          </div>
+          <p id="code-hint" class="field-hint">초대받은 방 코드와 위의 PIN을 사용합니다.</p>
+        </div>
+      </div>
+
+      <p id="lobby-error" role="status" aria-live="polite" aria-atomic="true"></p>
+    </section>
+  </main>
+
+  <footer class="lobby-footer" aria-label="서비스 특징">
+    <span>브라우저에서 바로 시작</span>
+    <span aria-hidden="true">·</span>
+    <span>설치 없이 함께 집중</span>
+  </footer>
 
   <script type="module" src="/lobby.js"></script>
 </body>

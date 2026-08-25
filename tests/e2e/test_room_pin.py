@@ -1,22 +1,18 @@
 from __future__ import annotations
 
+import re
 from typing import Any
-from uuid import uuid4
 
 import pytest
 from playwright.sync_api import Browser, expect
 
 
-def _room_id(prefix: str) -> str:
-    return f"{prefix[:4]}{uuid4().hex[:4]}".upper()
-
-
-def _create_room(page: Any, live_server: str, room_id: str, pin: str) -> None:
+def _create_room(page: Any, live_server: str, pin: str) -> str:
     page.goto(f"{live_server}/", wait_until="domcontentloaded")
-    page.locator("#room-input").fill(room_id)
     page.locator("#pin-input").fill(pin)
     page.locator("#btn-start").click()
-    expect(page).to_have_url(f"{live_server}/room/{room_id}")
+    expect(page).to_have_url(re.compile(rf"{re.escape(live_server)}/room/[A-Z0-9]+"))
+    return str(page.url.rsplit("/", 1)[-1])
 
 
 def _read_storage(page: Any, room_id: str) -> tuple[str | None, list[str]]:
@@ -30,12 +26,11 @@ def _read_storage(page: Any, room_id: str) -> tuple[str | None, list[str]]:
 
 @pytest.mark.e2e
 def test_room_pin_create_wrong_and_correct_join(browser: Browser, live_server: str) -> None:
-    room_id = _room_id("E2EPIN")
     pin = "1234"
 
     creator_context = browser.new_context()
     creator_page = creator_context.new_page()
-    _create_room(creator_page, live_server, room_id, pin)
+    room_id = _create_room(creator_page, live_server, pin)
     token, local_keys = _read_storage(creator_page, room_id)
     assert token is not None and len(token) > 20
     assert all("token" not in key.lower() and "pin" not in key.lower() for key in local_keys)
@@ -46,7 +41,7 @@ def test_room_pin_create_wrong_and_correct_join(browser: Browser, live_server: s
     wrong_page.locator("#code-toggle").click()
     wrong_page.locator("#room-input").fill(room_id)
     wrong_page.locator("#pin-input").fill("9999")
-    wrong_page.locator("#btn-start").click()
+    wrong_page.locator("#btn-join").click()
     expect(wrong_page.locator("#lobby-error")).to_have_text("입장할 수 없습니다")
     wrong_token, wrong_local_keys = _read_storage(wrong_page, room_id)
     assert wrong_token is None
@@ -58,7 +53,7 @@ def test_room_pin_create_wrong_and_correct_join(browser: Browser, live_server: s
     join_page.locator("#code-toggle").click()
     join_page.locator("#room-input").fill(room_id)
     join_page.locator("#pin-input").fill(pin)
-    join_page.locator("#btn-start").click()
+    join_page.locator("#btn-join").click()
     expect(join_page).to_have_url(f"{live_server}/room/{room_id}")
     join_token, join_local_keys = _read_storage(join_page, room_id)
     assert join_token is not None and len(join_token) > 20

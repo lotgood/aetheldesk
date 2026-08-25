@@ -1,43 +1,68 @@
-/* ──────────────────────────────────────────────────────────────
-   Velorah — shared design system layer for AethelDesk.
-   Both pages (lobby + room) consume this file; page-specific
-   styles (day-mode grades, layout) stay in each HTML head.
-   Tokens: pure-black base, Instrument Serif display, Inter body,
-   liquid glass with gradient-edge borders, two radius steps.
-   ────────────────────────────────────────────────────────────── */
+/*
+ * Quiet Orbit — AethelDesk shared visual language.
+ *
+ * The atmosphere is cinematic; the controls are deliberately practical.
+ * Surfaces use dark observatory glass so text stays readable over every 3D
+ * scene, while a single solar-gold accent identifies the current action.
+ */
 
 :root {
-  /* Color tokens (HSL fragments). */
-  --foreground:         0 0% 100%;
-  --primary:            0 0% 100%;
-  --primary-foreground: 0 0% 4%;
-  --muted-foreground:   240 4% 66%;
-  --ring:               0 0% 100%;
-  /* Day-mode ink: dark navy legible over bright sky. */
-  --day-ink:            rgba(15, 25, 45, 0.88);
+  color-scheme: dark;
 
-  /* Radius scale — two deliberate steps, no ad-hoc values.
-     pill  = single-row controls (chips, bars, buttons)
-     panel = multi-row surfaces (time dial, PIN card, dialogs) */
-  --radius-pill:  999px;
+  /* HSL fragments stay compatible with the existing hsl(var(--token)) API. */
+  --foreground:         42 33% 94%;
+  --primary:            42 76% 70%;
+  --primary-foreground: 221 52% 8%;
+  --muted-foreground:   217 22% 72%;
+  --ring:               42 76% 70%;
+
+  --void: #070a12;
+  --deep-indigo: #0d1324;
+  --observatory: #121a2b;
+  --observatory-strong: #0b1322;
+  --moon-paper: #f2eee6;
+  --mist: #a9b3c9;
+  --solar-gold: #f2c66d;
+  --aether-cyan: #75d5e6;
+  --dusk-lilac: #b7a7f2;
+  --ember: #ff8178;
+  --day-ink: rgba(8, 18, 34, 0.92);
+
+  --radius-pill: 999px;
   --radius-panel: 1.5rem;
-  --radius:       var(--radius-panel);
+  --radius: var(--radius-panel);
 
   --font-display: 'Instrument Serif', 'Times New Roman', 'AppleMyungjo', serif;
-  --font-body:    'Inter', system-ui, sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo',
+    'Noto Sans KR', system-ui, sans-serif;
 
-  --ease:      cubic-bezier(.32,.72,.32,1);
-  --ease-slow: cubic-bezier(.5,.05,.2,1);
+  --ease: cubic-bezier(.22, .82, .28, 1);
+  --ease-slow: cubic-bezier(.45, .05, .18, 1);
+  --track-latin: .16em;
+  --track-hangul: .015em;
 
-  /* Tracking scale. Hangul must never take Latin display tracking:
-     wide letter-spacing scatters syllable blocks into fragments.
-     latin  = uppercase Latin micro-labels only
-     hangul = Korean labels and controls */
-  --track-latin:  0.22em;
-  --track-hangul: 0.08em;
+  --glass-bg: linear-gradient(145deg, rgba(18, 28, 47, .88), rgba(8, 15, 28, .76));
+  --glass-border: rgba(222, 232, 255, .18);
+  --glass-highlight: rgba(255, 255, 255, .12);
+  --glass-shadow: 0 24px 70px -34px rgba(0, 0, 0, .82);
 }
 
-.font-display { font-family: var(--font-display); font-weight: 400; }
+*, *::before, *::after { box-sizing: border-box; }
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.font-display {
+  font-family: var(--font-display);
+  font-weight: 400;
+}
 
 .sr-only {
   position: absolute;
@@ -52,88 +77,87 @@
 }
 
 button:focus-visible,
-input:focus-visible {
+input:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
   outline: 2px solid hsl(var(--ring));
-  outline-offset: 5px;
+  outline-offset: 4px;
   border-radius: var(--radius-pill);
+  box-shadow: 0 0 0 5px rgba(242, 198, 109, .16);
 }
 
-/* ── Liquid glass ─────────────────────────────────────────────
-   Mild blur, ~1% white tint, gradient-border drawn with mask-xor. */
+/* A stable, legible material over bright beaches and dark skies alike. */
 .liquid-glass {
   position: relative;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.01);
-  background-blend-mode: luminosity;
-  backdrop-filter: blur(4px) saturate(140%);
-  -webkit-backdrop-filter: blur(4px) saturate(140%);
-  border: none;
-  box-shadow:
-    inset 0 1px 1px rgba(255,255,255,0.10),
-    0 20px 60px -30px rgba(0,0,0,0.7);
+  background: var(--glass-bg);
+  background-blend-mode: normal;
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
+  backdrop-filter: blur(18px) saturate(125%);
+  -webkit-backdrop-filter: blur(18px) saturate(125%);
 }
+
 .liquid-glass::before {
-  content: "";
+  content: '';
   position: absolute;
   inset: 0;
-  padding: 1.4px;
   border-radius: inherit;
-  background: linear-gradient(180deg,
-    rgba(255,255,255,0.45) 0%,
-    rgba(255,255,255,0.15) 20%,
-    rgba(255,255,255,0)    40%,
-    rgba(255,255,255,0)    60%,
-    rgba(255,255,255,0.15) 80%,
-    rgba(255,255,255,0.45) 100%);
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-          mask-composite: exclude;
   pointer-events: none;
-}
-/* Stronger edge highlight on hover — the glass "lights up". */
-.liquid-glass.interactive { transition: transform .6s var(--ease); }
-.liquid-glass.interactive:hover::before {
-  background: linear-gradient(180deg,
-    rgba(255,255,255,0.65) 0%,
-    rgba(255,255,255,0.22) 20%,
-    rgba(255,255,255,0.04) 40%,
-    rgba(255,255,255,0.04) 60%,
-    rgba(255,255,255,0.22) 80%,
-    rgba(255,255,255,0.65) 100%);
-  transition: background .6s var(--ease);
+  background:
+    linear-gradient(135deg, rgba(255,255,255,.14), transparent 28%),
+    linear-gradient(315deg, rgba(117,213,230,.06), transparent 34%);
+  opacity: .85;
 }
 
-/* ── Typography helpers ─────────────────────────────────────── */
+.liquid-glass.interactive {
+  transition:
+    transform .35s var(--ease),
+    border-color .35s ease,
+    background-color .35s ease,
+    box-shadow .35s ease;
+}
 
-/* Tiny labels — Inter, tracked uppercase, muted. Korean-safe tracking. */
+.liquid-glass.interactive:hover {
+  border-color: rgba(242, 198, 109, .42);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.17),
+    0 24px 70px -30px rgba(0,0,0,.9),
+    0 0 0 1px rgba(242,198,109,.08);
+}
+
 .ui-label {
   font-family: var(--font-body);
-  font-size: 10px;
-  font-weight: 400;
+  font-size: .75rem;
+  font-weight: 600;
+  line-height: 1.35;
   letter-spacing: var(--track-hangul);
-  text-transform: uppercase;
   color: hsl(var(--muted-foreground));
 }
 
-/* Numbers — Inter with tabular figures (clock, slider numerals). */
 .ui-num {
   font-family: var(--font-body);
-  font-weight: 500;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.05em;
+  letter-spacing: .02em;
 }
 
-/* ── Fade-rise entry — staggered ────────────────────────────── */
-@keyframes fade-rise {
-  from { opacity: 0; transform: translateY(24px); }
-  to   { opacity: 1; transform: translateY(0); }
+.interactive-icon {
+  width: 1.125rem;
+  height: 1.125rem;
+  flex: none;
+  stroke-width: 1.7;
 }
-.animate-fade-rise         { animation: fade-rise 0.9s var(--ease) both; }
-.animate-fade-rise-delay   { animation: fade-rise 0.9s var(--ease) 0.20s both; }
-.animate-fade-rise-delay-2 { animation: fade-rise 0.9s var(--ease) 0.40s both; }
-.animate-fade-rise-delay-3 { animation: fade-rise 0.9s var(--ease) 0.60s both; }
+
+@keyframes fade-rise {
+  from { opacity: 0; transform: translateY(12px) scale(.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.animate-fade-rise         { animation: fade-rise .65s var(--ease) both; }
+.animate-fade-rise-delay   { animation: fade-rise .65s var(--ease) .08s both; }
+.animate-fade-rise-delay-2 { animation: fade-rise .65s var(--ease) .16s both; }
+.animate-fade-rise-delay-3 { animation: fade-rise .65s var(--ease) .24s both; }
 
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-rise,
@@ -141,5 +165,18 @@ input:focus-visible {
   .animate-fade-rise-delay-2,
   .animate-fade-rise-delay-3 {
     animation: none !important;
+  }
+
+  .liquid-glass.interactive {
+    transition-duration: .08s;
+  }
+}
+
+@media (forced-colors: active) {
+  .liquid-glass {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+    backdrop-filter: none;
   }
 }

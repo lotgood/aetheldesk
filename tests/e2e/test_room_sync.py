@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from uuid import uuid4
 import re
 
 import pytest
@@ -11,17 +10,14 @@ from playwright.sync_api import Browser, Page, expect
 EVIDENCE_DIR = Path(__file__).resolve().parents[2] / ".omo" / "evidence"
 
 
-def _room_id(prefix: str) -> str:
-    return f"{prefix[:4]}{uuid4().hex[:4]}".upper()
-
-
-def _create_via_lobby(page: Page, live_server: str, room_id: str, pin: str) -> None:
+def _create_via_lobby(page: Page, live_server: str, pin: str) -> str:
     page.goto(f"{live_server}/", wait_until="domcontentloaded")
-    page.locator("#room-input").fill(room_id)
     page.locator("#pin-input").fill(pin)
     page.locator("#btn-start").click()
-    expect(page).to_have_url(f"{live_server}/room/{room_id}")
+    expect(page).to_have_url(re.compile(rf"{re.escape(live_server)}/room/[A-Z0-9]+"))
+    room_id = page.url.rsplit("/", 1)[-1]
     expect(page.locator("#room-label")).to_contain_text(room_id)
+    return room_id
 
 
 def _join_from_lobby(page: Page, live_server: str, room_id: str, pin: str) -> None:
@@ -29,7 +25,7 @@ def _join_from_lobby(page: Page, live_server: str, room_id: str, pin: str) -> No
     page.locator("#code-toggle").click()
     page.locator("#room-input").fill(room_id)
     page.locator("#pin-input").fill(pin)
-    page.locator("#btn-start").click()
+    page.locator("#btn-join").click()
     expect(page).to_have_url(f"{live_server}/room/{room_id}")
 
 
@@ -43,19 +39,14 @@ def _local_storage_keys(page: Page) -> list[str]:
     return page.evaluate("() => Object.keys(localStorage)")
 
 
-def _reveal_controls(page: Page) -> None:
-    page.mouse.move(20, 20)
-
-
 @pytest.mark.e2e
 def test_two_client_sync_reload_reconnect_and_scene(browser: Browser, live_server: str) -> None:
     EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
-    room_id = _room_id("E2ESYNC")
     pin = "1234"
 
     context_a = browser.new_context()
     page_a = context_a.new_page()
-    _create_via_lobby(page_a, live_server, room_id, pin)
+    room_id = _create_via_lobby(page_a, live_server, pin)
     token_a = _token_for_room(page_a, room_id)
 
     context_b = browser.new_context()
@@ -69,6 +60,8 @@ def test_two_client_sync_reload_reconnect_and_scene(browser: Browser, live_serve
         assert all("token" not in key.lower() and "pin" not in key.lower() for key in keys)
 
     page_a.locator('#dur-chips button[data-min="25"]').click()
+    expect(page_a.locator("#idle-duration")).to_have_text("25:00")
+    page_a.wait_for_function("() => document.body.dataset.mode === 'idle'")
     page_a.locator("#focus-btn").click()
     page_b.wait_for_function("() => document.getElementById('pomodoro').style.opacity === '1'")
     expect(page_b).to_have_title(re.compile(r"2[45]:[0-5][0-9].*집중.*AethelDesk"))
@@ -76,26 +69,21 @@ def test_two_client_sync_reload_reconnect_and_scene(browser: Browser, live_serve
 
     expect(page_b.locator("#pom-time")).to_have_text(re.compile(r"2[45]:[0-5][0-9]"))
 
-    _reveal_controls(page_a)
-    _reveal_controls(page_b)
-    page_b.wait_for_function("() => parseFloat(getComputedStyle(document.getElementById('conn-dot')).opacity) > 0")
-    page_b.locator("#btn-pause-timer").click()
+    pause_b = page_b.locator("#btn-pause-timer")
+    expect(pause_b).to_be_visible()
+    pause_b.click()
     expect(page_b).to_have_title(re.compile(r"2[45]:[0-5][0-9].*일시정지.*AethelDesk"))
-    page_b.locator("#btn-pause-timer").click()
+    pause_b.click()
     expect(page_b).to_have_title(re.compile(r"2[45]:[0-5][0-9].*집중.*AethelDesk"))
-    page_a.locator("#btn-play").click(force=True)
-    page_b.wait_for_function("() => parseFloat(getComputedStyle(document.getElementById('conn-dot')).opacity) > 0")
-    page_a.locator("#btn-pause").click(force=True)
-    page_b.wait_for_function("() => parseFloat(getComputedStyle(document.getElementById('conn-dot')).opacity) > 0")
-    page_a.locator("#btn-skip").click(force=True)
-    page_b.wait_for_function("() => parseFloat(getComputedStyle(document.getElementById('conn-dot')).opacity) > 0")
-
-    page_a.evaluate(
-        "() => { const slider = document.getElementById('time-slider'); slider.value = '555'; slider.dispatchEvent(new Event('input', { bubbles: true })); }"
-    )
-    expect(page_b.locator("#time-slider")).to_have_value("555")
-    page_a.locator("#btn-reset-time").click(force=True)
-    page_b.wait_for_function("() => document.getElementById('time-slider').value !== '555'")
+    expect(page_a.locator("#music-bar")).to_be_visible()
+    expect(page_a.locator("#btn-play")).to_be_visible()
+    page_a.locator("#btn-play").click()
+    expect(page_b.locator("#btn-pause")).to_be_visible()
+    expect(page_a.locator("#btn-pause")).to_be_visible()
+    page_a.locator("#btn-pause").click()
+    expect(page_b.locator("#btn-play")).to_be_visible()
+    expect(page_a.locator("#btn-skip")).to_be_visible()
+    page_a.locator("#btn-skip").click()
 
     page_b.reload(wait_until="domcontentloaded")
     expect(page_b.locator("#room-auth")).to_be_hidden()
@@ -107,13 +95,24 @@ def test_two_client_sync_reload_reconnect_and_scene(browser: Browser, live_serve
     page_a.reload(wait_until="domcontentloaded")
     expect(page_a.locator("#room-auth")).to_be_hidden()
     page_a.wait_for_function("() => document.getElementById('pomodoro').style.opacity === '1'")
-    _reveal_controls(page_a)
     page_a.locator("#btn-cancel-timer").click()
     expect(page_a).to_have_title("AethelDesk")
+    for selector in ("#focus-btn", "#time-dial", "#btn-copy-room", "#dur-chips", "#btn-reset-time"):
+        assert page_a.locator(selector).get_attribute("tabindex") != "-1"
+    expect(page_a.locator("#time-dial")).to_be_visible()
 
-    _reveal_controls(page_a)
-    page_a.locator("#btn-scene").click(force=True)
-    page_a.wait_for_function("() => localStorage.getItem('scene') !== null")
+    page_a.evaluate(
+        "() => { const slider = document.getElementById('time-slider'); slider.value = '555'; slider.dispatchEvent(new Event('input', { bubbles: true })); }"
+    )
+    expect(page_b.locator("#time-slider")).to_have_value("555")
+    page_a.locator("#btn-reset-time").click()
+    page_b.wait_for_function("() => document.getElementById('time-slider').value !== '555'")
+
+    page_a.locator("#btn-scene").click()
+    expect(page_a.locator("#scene-panel")).to_be_visible()
+    page_a.locator('[data-scene="city"]').click()
+    page_a.wait_for_function("() => document.body.dataset.scene === 'city' && localStorage.getItem('scene') === 'city'")
+    expect(page_a.locator("#scene-label")).to_have_text("도시")
     local_keys = _local_storage_keys(page_a)
     assert "scene" in local_keys
     assert all(not key.startswith("room_token:") for key in local_keys)
@@ -123,7 +122,7 @@ def test_two_client_sync_reload_reconnect_and_scene(browser: Browser, live_serve
         "\n".join(
             [
                 f"room_id={room_id}",
-                "verified=focus_toggle_via_#focus-btn,duration,tab_title_focus_pause_reload_idle,music_play_pause_skip,time_override_reset,reload_state,reconnect_recovery,scene_storage",
+                "verified=focus_toggle_via_#focus-btn,duration_primary_cta,tab_title_focus_pause_reload_idle,persistent_music_play_pause_skip,time_override_reset,reload_state,reconnect_recovery,scene_picker_storage",
                 "screenshots=task-12-two-client-focus.png,task-12-reload-state.png",
             ]
         ),
@@ -136,12 +135,11 @@ def test_two_client_sync_reload_reconnect_and_scene(browser: Browser, live_serve
 
 @pytest.mark.e2e
 def test_focus_pause_timer_stays_clickable(browser: Browser, live_server: str) -> None:
-    room_id = _room_id("E2EPAUSE")
     context = browser.new_context()
     page = context.new_page()
-    _create_via_lobby(page, live_server, room_id, "2468")
+    _create_via_lobby(page, live_server, "2468")
     expect(page.locator("#focus-btn")).to_be_visible()
-    page.wait_for_function("() => parseFloat(getComputedStyle(document.getElementById('conn-dot')).opacity) > 0")
+    expect(page.locator("#conn-copy")).to_have_text("연결됨")
     page.locator("#focus-btn").click()
     pause = page.locator("#btn-pause-timer")
     expect(pause).to_be_visible()

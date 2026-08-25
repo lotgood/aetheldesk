@@ -1,15 +1,15 @@
 /* The lobby sky mirrors real local time (like the room's default sky)
    instead of strobing through a fake fast day/night cycle. */
 const KF = [
-  { t: 0.00, top: "#0A0A14", bot: "#1A0A2E", dayF: 0 },
-  { t: 0.18, top: "#1A0A2E", bot: "#2C1654", dayF: 0 },
-  { t: 0.28, top: "#2C1654", bot: "#FF6B35", dayF: 0 },
-  { t: 0.36, top: "#FFB347", bot: "#FF6B35", dayF: 1 },
-  { t: 0.50, top: "#B8DFFF", bot: "#7ABFDC", dayF: 1 },
-  { t: 0.64, top: "#FFB347", bot: "#FF6B35", dayF: 1 },
-  { t: 0.72, top: "#2C1654", bot: "#FF6B35", dayF: 0 },
-  { t: 0.82, top: "#1A0A2E", bot: "#2C1654", dayF: 0 },
-  { t: 1.00, top: "#0A0A14", bot: "#1A0A2E", dayF: 0 },
+  { t: 0.00, top: "#050812", bot: "#11182B", dayF: 0 },
+  { t: 0.18, top: "#0A1020", bot: "#21233D", dayF: 0 },
+  { t: 0.28, top: "#222039", bot: "#765067", dayF: 0 },
+  { t: 0.36, top: "#8DAEC0", bot: "#C68870", dayF: 1 },
+  { t: 0.50, top: "#BFD9E5", bot: "#79A7BE", dayF: 1 },
+  { t: 0.64, top: "#9BB6C4", bot: "#C47D64", dayF: 1 },
+  { t: 0.72, top: "#29243D", bot: "#8A5361", dayF: 0 },
+  { t: 0.82, top: "#101629", bot: "#25253F", dayF: 0 },
+  { t: 1.00, top: "#050812", bot: "#11182B", dayF: 0 },
 ];
 const DAY_COLOR = [15, 30, 50];
 const NIGHT_COLOR = [255, 255, 255];
@@ -34,7 +34,7 @@ function skyAt(t) {
       return { top: lerpHex(a.top, b.top, f), bot: lerpHex(a.bot, b.bot, f), dayF: lerpN(a.dayF, b.dayF, f) };
     }
   }
-  return { top: "#0A0A14", bot: "#1A0A2E", dayF: 0 };
+  return { top: "#050812", bot: "#11182B", dayF: 0 };
 }
 
 let starsReady = false;

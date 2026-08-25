@@ -1,4 +1,4 @@
-import { byId, createFocusTrap, setHiddenInteraction } from "./dom.js";
+import { byId, createFocusTrap, setHiddenInteraction, setModalIsolation } from "./dom.js";
 
 // ─── Display settings popover ────────────────────────────────────────────
 // Owns the ⚙ 화면 panel: quality select + FX toggles. All rendering work is
@@ -27,7 +27,10 @@ export function createDisplaySettings({ sceneController, statusEl }) {
   const select = byId("quality-select");
   if (!panel || !openBtn || !select || !sceneController) return null;
 
-  const effective = sceneController.getEffectiveFX();
+  // The controls represent the user's/tier preference. A scene may suppress
+  // an unsafe pass at runtime (the ocean bloom case) without flipping the
+  // saved toggle or making the control lie about what will return elsewhere.
+  const effective = sceneController.getPreferredFX?.() || sceneController.getEffectiveFX();
   const stored = sceneController.getFXOptions();
   const state = {
     bloom: toOnOff(stored.bloom, toOnOff(effective.bloom, true)),
@@ -72,22 +75,31 @@ export function createDisplaySettings({ sceneController, statusEl }) {
   });
 
   function open() {
+    window.dispatchEvent(new CustomEvent("aethel:panel-open", { detail: { id: "display-panel" } }));
     panel.style.display = "flex";
     setHiddenInteraction(panel, false);
     openBtn.setAttribute("aria-expanded", "true");
+    document.body.classList.add("panel-open");
+    setModalIsolation(panel, true);
     trap.activate();
   }
 
   function close() {
+    setModalIsolation(panel, false);
     trap.deactivate();
     setHiddenInteraction(panel, true);
     panel.style.display = "none";
     openBtn.setAttribute("aria-expanded", "false");
+    document.body.classList.remove("panel-open");
   }
 
   openBtn.addEventListener("click", () => {
     if (panel.style.display === "none") open();
     else close();
+  });
+  byId("display-panel-close")?.addEventListener("click", close);
+  window.addEventListener("aethel:panel-open", event => {
+    if (event.detail?.id !== "display-panel" && panel.style.display !== "none") close();
   });
 
   syncToggles();

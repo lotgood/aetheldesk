@@ -1,4 +1,49 @@
-# Task 9 UX Discovery Audit
+# AethelDesk UX Contract And Audit History
+
+## Quiet Orbit Current UX Contract — 2026-08-24
+
+Quiet Orbit is the current Korean-primary experience for the lobby and shared focus room. It preserves the existing room APIs, WebSocket state authority, session-only room tokens, and four client-local display preferences.
+
+### Visual language
+
+- Deep observatory navy, moon-paper text, solar-gold emphasis, restrained cyan connection accents, and translucent glass surfaces form the shared system.
+- `frontend/velorah.css` owns shared tokens and primitives; `frontend/lobby.css` and `frontend/room.css` own page layout and responsive behavior.
+- Instrument Serif is reserved for the brand and large time numerals. Korean controls use the self-hosted Inter family without synthetic italics or excessive tracking.
+- Decorative motion must respect `prefers-reduced-motion`; reduced motion may simplify ambience but must not freeze celestial state, shared state, or essential feedback.
+
+### Lobby journey
+
+- `새 방 만들기` is the single primary create action. `방 코드로 입장` reveals the explicit code-and-join path instead of silently changing the primary action's meaning.
+- The two paths share one PIN field and one generic security failure message. Client-side empty-field guidance may be specific, but unknown-room and wrong-PIN responses remain indistinguishable.
+- Collapsed join controls remain outside the tab order, and errors remain visible polite live status.
+
+### Shared room journey
+
+- The top HUD keeps the AethelDesk identity, selectable room code, copy action, completed-session constellation, visible connection label, clock, and date.
+- `#focus-btn` is the only action that starts a session. The button visibly includes `#idle-duration`; 25/50-minute options only choose the duration.
+- Focus and break modes center the monumental timer, phase label, progress line, and relevant pause/cancel/skip controls. Hidden chrome must be both visually hidden and non-interactive.
+- Music controls remain visible for all connected participants because playback is shared room state, even when the current client has never saved a playlist.
+- The scene control opens a labelled four-option picker: 하늘, 도시, 해변, 숲. The active option uses `aria-pressed`, persists locally, and announces the change.
+- Connection, copy, location, scene, and settings results appear in the visible live `#room-status` surface. Authentication and destructive exit confirmation retain focus containment and restoration.
+
+### Responsive and verification contract
+
+- The room must remain operable without horizontal clipping at 320px width and account for mobile safe-area insets. Panels may become bottom sheets but must not overlap the time control or dock.
+- Rooms use the browser's complete visible viewport on desktop and mobile. `dvh` follows address-bar changes, while a height-aware circular timer and HUD safe lanes preserve composition without letterboxing.
+- The primary focus control remains a geometric 1:1 circle at every supported viewport and browser scale. The 3D renderer, fallback canvases, overlays, and pointer coordinates share the same stage rectangle.
+- Sun and moon discs retain a readable circular limb in front of their additive halos. Bloom may soften the surrounding atmosphere but must not erase disc shape or crater detail.
+- Celestial composition and scene lighting are separate contracts: sun/moon sprites may be perspective-compressed to stay on screen, while shadows, water glitter, foliage shafts, and material highlights follow the eased physical key-light direction. A high noon state must not cast horizon-length shadows.
+- Time-slider jumps ease palette, daylight, elevation, body positions, light direction, and satellite anchor together. Consumers must not combine a target elevation with a still-night live grade.
+- The beach uses an overscanned land mesh plus one shared curved shoreline equation for water, foam, wet sand, and tide. The complete allowed camera yaw must never expose a mesh edge, stepped block, or triangular sand wedge.
+- Scene-local effects obey the same display and motion controls as post-processing: reduced motion freezes decoration, and disabling shafts also disables forest canopy cards and motes.
+- Renderer quality always caps the effective DPR at 2 and routes fatal tick, shader, post-processing, or WebGL-context failures to the complete 2D fallback instead of leaving a blank `is-3d` canvas.
+- Modal and panel backgrounds are inert and hidden from assistive technology while open, with focus restored to the trigger on close. Coarse-pointer targets remain at least 44 CSS pixels.
+- Every production-build QA pass covers desktop, 1024×768 coarse tablet, 844×390 short landscape, 390×844, and 320×568; idle, focus, auth, track error, display, and exit states; all four scenes; keyboard focus; and reduced motion.
+- Scene QA fails on any uncaught page error or console error. In particular, the beach scene must render beyond multiple animation frames without a reduced-motion helper error.
+
+## Historical Task 9 UX Discovery Audit
+
+The sections below are retained as audit history. Where they conflict with the dated Quiet Orbit contract above—especially the former deferral of a scene picker—the current contract takes precedence.
 
 Discovery only. This audit is grounded in `frontend/lobby.html`, `frontend/room.html`, `frontend/app.js`, `frontend/scenes.js`, the current e2e flows, and Playwright inspection against `http://127.0.0.1:8019`. No UI or behavior changes were made.
 

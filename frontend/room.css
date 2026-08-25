@@ -1,0 +1,1243 @@
+/* AethelDesk room — Quiet Orbit visual layer.
+   Loaded after the legacy inline rules while the migration remains reversible. */
+
+html {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(ellipse at center, rgba(18, 29, 49, .72), rgba(3, 7, 13, .96) 68%),
+    var(--void);
+}
+
+body.quiet-orbit {
+  --stage-width: 100vw;
+  --stage-height: 100vh;
+  --room-edge: clamp(1rem, min(2.6vw, 4.622222vh), 2.5rem);
+  position: relative;
+  width: var(--stage-width);
+  height: var(--stage-height);
+  max-width: none;
+  max-height: none;
+  flex: none;
+  container: room-stage / size;
+  background: var(--void);
+  color: var(--moon-paper);
+  text-shadow: none;
+  isolation: isolate;
+}
+
+/* `vh` is the compatibility fallback. On mobile browsers the visible page
+   shrinks and grows with the address bar, while legacy `vh` can keep the
+   larger layout viewport and crop the controls under browser chrome. Dynamic
+   viewport units follow the actually visible area, so the stage, camera and
+   HUD resize together instead of changing their composition independently. */
+@supports (height: 100dvh) {
+  html {
+    height: 100dvh;
+  }
+
+  body.quiet-orbit {
+    --stage-height: 100dvh;
+    --room-edge: clamp(1rem, min(2.6vw, 4.622222dvh), 2.5rem);
+  }
+}
+
+/* The room always fills the browser's visible content viewport. The 3D camera
+   receives this real aspect ratio, so wide windows reveal more panorama rather
+   than manufacturing black side bars or cropping the HUD to a 16:9 box. */
+
+body.quiet-orbit::before {
+  position: absolute;
+}
+
+body.quiet-orbit::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 43%, transparent 0 21%, rgba(5, 9, 17, .08) 48%, rgba(3, 7, 13, .6) 100%),
+    linear-gradient(180deg, rgba(5, 9, 18, .08), transparent 30%, rgba(4, 8, 15, .18) 62%, rgba(4, 8, 15, .55));
+}
+
+.ambient-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(4,8,16,.18), transparent 25% 75%, rgba(4,8,16,.18)),
+    linear-gradient(180deg, rgba(7,11,20,.22), transparent 30% 68%, rgba(7,11,20,.35));
+}
+
+body.quiet-orbit > canvas,
+body.quiet-orbit > #sky {
+  z-index: -1;
+}
+
+body.day,
+body.day [class*='text-white'],
+body.day .ui-label,
+body.day .dur-segment,
+body.day .pom-ctl,
+body.day .ctrl-btn,
+body.day .focus-btn,
+body.day #pom-time,
+body.day #date-label {
+  color: var(--moon-paper) !important;
+  text-shadow: none !important;
+}
+
+body.day .liquid-glass,
+body.day #room-auth .liquid-glass {
+  background: var(--glass-bg);
+  border-color: var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
+}
+
+body.day .liquid-glass::before,
+body.day #room-auth .liquid-glass::before {
+  background:
+    linear-gradient(135deg, rgba(255,255,255,.14), transparent 28%),
+    linear-gradient(315deg, rgba(117,213,230,.06), transparent 34%);
+}
+
+/* Top observatory HUD */
+#hud-tl,
+#hud-tr {
+  z-index: 30;
+  top: var(--room-edge) !important;
+}
+
+#hud-tl {
+  left: var(--room-edge) !important;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: .8rem;
+}
+
+#hud-tr {
+  right: var(--room-edge) !important;
+  gap: .55rem !important;
+}
+
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: .65rem;
+  color: var(--moon-paper);
+  filter: drop-shadow(0 2px 14px rgba(0,0,0,.5));
+}
+
+.brand-orbit {
+  width: 2rem;
+  height: 2rem;
+  fill: none;
+  stroke: var(--solar-gold);
+  stroke-width: 1;
+  opacity: .92;
+}
+
+.brand-orbit .brand-star { fill: var(--solar-gold); stroke: none; }
+.brand-orbit .brand-moon { fill: var(--moon-paper); stroke: none; }
+
+.brand-wordmark {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  letter-spacing: .015em;
+}
+
+.hud-chip {
+  min-height: 2.5rem;
+  padding: .55rem .8rem;
+  gap: .55rem;
+  border-radius: .85rem;
+  color: var(--moon-paper);
+}
+
+.room-chip { padding-right: .95rem; }
+
+#room-label {
+  display: inline-block;
+  max-width: min(12rem, 28cqw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+}
+
+.copy-room {
+  position: relative;
+  z-index: 1;
+  width: 2rem;
+  height: 2rem;
+  margin: -.3rem -.25rem;
+  display: inline-grid;
+  place-items: center;
+  border-radius: .55rem;
+  color: var(--mist);
+}
+
+.copy-room:hover { color: var(--solar-gold); background: rgba(242,198,109,.09); }
+.copy-room svg { width: .95rem; height: .95rem; fill: none; stroke: currentColor; stroke-width: 1.7; }
+
+.room-kicker,
+.session-caption,
+.connection-copy {
+  color: var(--mist);
+  font-size: .68rem;
+  font-weight: 650;
+  letter-spacing: .04em;
+}
+
+.hud-rule {
+  width: 1px;
+  height: 1rem;
+  flex: none;
+  background: linear-gradient(transparent, rgba(230,236,255,.28), transparent);
+}
+
+.session-constellation {
+  min-width: .25rem;
+  color: var(--solar-gold) !important;
+}
+
+.time-chip { min-width: 10.5rem; justify-content: flex-end; }
+
+#conn-dot {
+  width: .46rem !important;
+  height: .46rem !important;
+  flex: none;
+  color: var(--aether-cyan);
+  background: currentColor !important;
+  box-shadow: 0 0 0 3px rgba(117,213,230,.12), 0 0 16px rgba(117,213,230,.65) !important;
+}
+
+#clock {
+  margin-left: auto;
+  font-family: var(--font-body) !important;
+  font-size: 1rem !important;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+#date-label {
+  padding-right: .15rem !important;
+  color: rgba(236,240,249,.72) !important;
+  font-size: .72rem;
+}
+
+.status-toast {
+  position: absolute;
+  top: calc(var(--room-edge) + 4.75rem);
+  right: var(--room-edge);
+  bottom: auto;
+  left: auto;
+  z-index: 45;
+  max-width: min(32rem, calc(100cqw - 2rem));
+  min-height: 2.5rem;
+  padding: .65rem .9rem;
+  border: 1px solid rgba(224,232,250,.16);
+  border-radius: var(--radius-pill);
+  background: rgba(8,15,28,.88);
+  box-shadow: 0 18px 50px -28px rgba(0,0,0,.9);
+  color: var(--moon-paper);
+  font-size: .72rem;
+  font-weight: 650;
+  text-align: right;
+  transform: none;
+  backdrop-filter: blur(14px);
+  transition: opacity .18s ease, transform .22s var(--ease);
+}
+
+.status-toast:empty {
+  min-height: 0;
+  padding-block: 0;
+  border-width: 0;
+  opacity: 0;
+  transform: translateY(-.5rem);
+  pointer-events: none;
+}
+
+/* Central focus ritual */
+#center-cluster {
+  gap: 1rem !important;
+  z-index: 12;
+  margin-top: -1.2rem;
+}
+
+.focus-intro {
+  margin: 0 0 .2rem;
+  color: rgba(232,237,248,.76);
+  font-size: .78rem;
+  font-weight: 550;
+  letter-spacing: .08em;
+  text-shadow: 0 2px 16px rgba(0,0,0,.72);
+}
+
+.focus-btn {
+  --focus-diameter: clamp(16rem, min(23cqw, 40cqh), 20rem);
+  inline-size: var(--focus-diameter);
+  block-size: var(--focus-diameter);
+  min-inline-size: var(--focus-diameter);
+  min-block-size: var(--focus-diameter);
+  aspect-ratio: 1 / 1;
+  flex: 0 0 var(--focus-diameter);
+  padding: 2.25rem 2.4rem 2rem !important;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .6rem;
+  border-radius: 50% !important;
+  color: var(--moon-paper) !important;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(25,39,65,.94), rgba(9,17,31,.88) 68%),
+    var(--glass-bg) !important;
+  border-color: rgba(232,220,188,.3) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.16),
+    inset 0 0 55px rgba(108,145,201,.08),
+    0 30px 90px -35px rgba(0,0,0,.95),
+    0 0 0 1px rgba(242,198,109,.06) !important;
+  text-shadow: none;
+}
+
+.focus-btn::before {
+  inset: .8rem;
+  border: 1px dashed rgba(242,198,109,.26);
+  background: none;
+  opacity: 1;
+}
+
+.focus-btn::after {
+  inset: -2.1rem !important;
+  background: radial-gradient(circle, rgba(242,198,109,.12), rgba(117,213,230,.035) 42%, transparent 70%) !important;
+  opacity: .72;
+  animation: quiet-breathe 7s var(--ease-slow) infinite !important;
+}
+
+@keyframes quiet-breathe {
+  0%, 100% { opacity: .48; transform: scale(.98); }
+  50% { opacity: .82; transform: scale(1.025); }
+}
+
+.focus-btn:hover {
+  transform: translateY(-3px) scale(1.012) !important;
+  border-color: rgba(242,198,109,.54) !important;
+}
+
+.focus-kicker {
+  color: var(--mist);
+  font-family: var(--font-body);
+  font-size: .7rem;
+  font-weight: 700;
+  letter-spacing: .13em;
+}
+
+.focus-duration {
+  color: var(--moon-paper);
+  font-size: clamp(3.5rem, 6.5cqw, 5.25rem);
+  font-weight: 430;
+  line-height: .95;
+  letter-spacing: -.055em;
+  font-variant-numeric: tabular-nums;
+}
+
+.focus-action {
+  min-height: 2.5rem;
+  margin-top: .45rem;
+  padding: .55rem 1rem;
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  border-radius: var(--radius-pill);
+  background: var(--solar-gold);
+  color: var(--observatory-strong);
+  font-family: var(--font-body);
+  font-size: .8rem;
+  font-weight: 750;
+}
+
+.focus-action svg {
+  width: 1rem;
+  height: 1rem;
+  fill: currentColor;
+}
+
+#dur-chips {
+  gap: .25rem !important;
+  padding: .28rem !important;
+  border-radius: var(--radius-pill) !important;
+  background: rgba(8,15,28,.78) !important;
+}
+
+.dur-segment {
+  min-width: 4.5rem;
+  min-height: 2.4rem;
+  padding: .55rem .9rem !important;
+  color: var(--mist) !important;
+  font-size: .75rem !important;
+  font-weight: 650 !important;
+  letter-spacing: .01em !important;
+}
+
+.dur-segment[data-active='true'],
+body.day .dur-segment[data-active='true'] {
+  background: rgba(242,198,109,.16) !important;
+  color: var(--solar-gold) !important;
+  box-shadow: inset 0 0 0 1px rgba(242,198,109,.32);
+}
+
+/* Active timer continuity */
+#pomodoro {
+  z-index: 12;
+  gap: 1.4rem !important;
+  text-align: center;
+}
+
+.pom-phase {
+  color: var(--solar-gold);
+  font-size: .75rem;
+  font-weight: 750;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+body[data-mode='break'] .pom-phase,
+body[data-mode='break'] #pom-progress { color: var(--dusk-lilac); }
+body[data-mode='paused'] .pom-phase,
+body[data-mode='paused'] #pom-progress { color: var(--mist); }
+
+#pom-time,
+#pom-time > span {
+  font-family: var(--font-body) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+#pom-time {
+  color: var(--moon-paper) !important;
+  font-size: clamp(6.2rem, 14cqw, 11.5rem) !important;
+  font-weight: 360 !important;
+  line-height: .83 !important;
+  letter-spacing: -.065em !important;
+  text-shadow: 0 5px 36px rgba(0,0,0,.55) !important;
+}
+
+#pom-progress {
+  color: var(--solar-gold);
+  min-height: 2px;
+  box-shadow: 0 0 14px rgba(242,198,109,.45);
+}
+
+#focus-row,
+#break-row {
+  min-height: 3.25rem;
+  padding: .35rem .45rem !important;
+  border-radius: var(--radius-pill) !important;
+  background: rgba(8,15,28,.84) !important;
+  border: 1px solid rgba(225,232,249,.18);
+  box-shadow: var(--glass-shadow) !important;
+}
+
+.pom-ctl {
+  min-height: 2.5rem;
+  padding: .65rem 1rem !important;
+  color: var(--moon-paper) !important;
+  font-size: .75rem !important;
+  font-weight: 700 !important;
+  letter-spacing: .01em !important;
+}
+
+/* Celestial time instrument */
+#time-dial {
+  left: var(--room-edge) !important;
+  bottom: var(--room-edge) !important;
+  z-index: 31;
+  color: var(--moon-paper);
+}
+
+#time-dial > .liquid-glass {
+  min-width: 16.5rem !important;
+  padding: .8rem .9rem !important;
+  gap: .65rem !important;
+  border-radius: 1rem !important;
+}
+
+.dial-header { min-height: 1.9rem; }
+
+#time-value {
+  margin-left: auto;
+  color: var(--moon-paper);
+  font-size: .78rem !important;
+  opacity: 1 !important;
+}
+
+#btn-reset-time {
+  min-width: 2.8rem;
+  min-height: 2rem;
+  padding: .35rem .6rem;
+  border-radius: var(--radius-pill);
+  background: rgba(242,198,109,.12);
+  color: var(--solar-gold);
+  opacity: 1 !important;
+}
+
+#time-slider {
+  width: 9rem !important;
+  min-height: 1.5rem;
+}
+
+#time-slider::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(117,213,230,.55), rgba(242,198,109,.65));
+}
+
+#time-slider::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  margin-top: -7.5px;
+  border: 3px solid var(--observatory-strong);
+  border-radius: 50%;
+  background: var(--solar-gold) !important;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.32), 0 3px 12px rgba(0,0,0,.45) !important;
+}
+
+/* Bottom dock + ambient player */
+#controls {
+  bottom: var(--room-edge) !important;
+  z-index: 32;
+  gap: .7rem !important;
+  padding-inline: clamp(.75rem, 2cqw, 1.5rem) !important;
+  opacity: 1 !important;
+  pointer-events: none;
+  transition: opacity .3s ease, transform .3s var(--ease) !important;
+}
+
+#controls > * { pointer-events: auto; }
+
+#action-bar {
+  min-height: 4rem;
+  padding: .35rem !important;
+  gap: .2rem !important;
+  border-radius: 1.2rem !important;
+  background: linear-gradient(145deg, rgba(15,25,43,.94), rgba(7,14,26,.9));
+}
+
+.dock-button {
+  min-width: 4.75rem;
+  min-height: 3.15rem;
+  padding: .45rem .8rem !important;
+  display: inline-flex !important;
+  flex-direction: column;
+  justify-content: center;
+  gap: .28rem !important;
+  border-radius: .85rem;
+  color: rgba(235,239,248,.84) !important;
+  font-size: .7rem !important;
+  font-weight: 650 !important;
+  letter-spacing: .01em !important;
+  white-space: nowrap;
+}
+
+.dock-button:hover,
+.dock-button[aria-expanded='true'] {
+  color: var(--solar-gold) !important;
+  background: rgba(242,198,109,.1);
+}
+
+.dock-button svg,
+.icon-button svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.danger-muted:hover { color: var(--ember) !important; background: rgba(255,129,120,.08); }
+
+#action-bar > .ctrl-sep {
+  height: 2rem !important;
+  opacity: .62;
+}
+
+#music-bar {
+  width: min(29rem, calc(100cqw - 2rem));
+  min-height: 3.6rem;
+  padding: .4rem .45rem .4rem .85rem !important;
+  justify-content: space-between;
+  gap: .75rem !important;
+  border-radius: 1.1rem !important;
+  background: linear-gradient(145deg, rgba(15,25,43,.92), rgba(7,14,26,.87));
+}
+
+.music-identity,
+.music-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+}
+
+.music-identity { min-width: 0; gap: .55rem; }
+.music-actions { gap: .15rem; }
+
+.music-identity > span:last-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+.music-identity strong {
+  color: var(--moon-paper);
+  font-size: .72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.music-identity small {
+  overflow: hidden;
+  color: var(--mist);
+  font-size: .62rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.music-note { color: var(--solar-gold); font-size: 1.05rem; }
+
+.icon-button {
+  min-width: 2.6rem;
+  min-height: 2.6rem;
+  padding: .45rem !important;
+  justify-content: center;
+  border-radius: .75rem;
+  color: var(--mist) !important;
+}
+
+.icon-button > span { display: none; }
+.icon-button.primary-icon { color: var(--observatory-strong) !important; background: var(--solar-gold); }
+
+.eq { color: var(--aether-cyan); }
+
+/* Sheets and temporary rows */
+.orbit-panel,
+#display-panel,
+.orbit-confirm {
+  position: relative;
+  z-index: 5;
+  color: var(--moon-paper);
+  background: linear-gradient(155deg, rgba(18,29,49,.97), rgba(7,14,26,.96)) !important;
+  border-radius: 1.35rem !important;
+  box-shadow: 0 36px 100px -30px rgba(0,0,0,.95) !important;
+}
+
+.orbit-panel,
+#display-panel {
+  width: min(39rem, calc(100cqw - 2rem));
+  padding: 1rem !important;
+  flex-direction: column;
+  align-items: stretch !important;
+  gap: .85rem !important;
+}
+
+.panel-heading {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.panel-heading > span,
+.quality-row label {
+  display: flex;
+  flex-direction: column;
+  gap: .08rem;
+  text-align: left;
+}
+
+.panel-heading small,
+.quality-row small,
+.fx-toggle small,
+.scene-option small,
+.confirm-copy small {
+  color: var(--mist);
+  font-size: .66rem;
+  font-weight: 500;
+}
+
+.panel-heading strong,
+.confirm-copy strong {
+  color: var(--moon-paper);
+  font-size: .95rem;
+  font-weight: 750;
+}
+
+.panel-close {
+  min-width: 3.4rem;
+  min-height: 2.75rem;
+  padding: .5rem .75rem;
+  border-radius: var(--radius-pill);
+  background: rgba(255,255,255,.06);
+  color: var(--mist);
+  font-size: .72rem;
+  font-weight: 650;
+}
+
+.scene-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .55rem;
+}
+
+.scene-option {
+  min-width: 0;
+  min-height: 6.6rem;
+  padding: .45rem;
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  border: 1px solid rgba(224,232,250,.12);
+  border-radius: .9rem;
+  background: rgba(255,255,255,.035);
+  text-align: left;
+}
+
+.scene-option:hover,
+.scene-option[aria-pressed='true'] {
+  border-color: rgba(242,198,109,.48);
+  background: rgba(242,198,109,.08);
+}
+
+.scene-option:focus-visible,
+.fx-toggle:focus-visible,
+.dock-button:focus-visible,
+.panel-close:focus-visible,
+.copy-room:focus-visible {
+  border-radius: .85rem;
+}
+
+.scene-option > span:last-child { display: flex; flex-direction: column; gap: .05rem; }
+.scene-option strong { color: var(--moon-paper); font-size: .75rem; }
+.scene-option[aria-pressed='true'] strong { color: var(--solar-gold); }
+
+.scene-preview {
+  height: 3.15rem;
+  width: 100%;
+  overflow: hidden;
+  border-radius: .62rem;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.1);
+}
+
+.preview-sky { background: radial-gradient(circle at 72% 26%, #f2c66d 0 4%, transparent 5%), linear-gradient(#405d7a 0 49%, #7894a6 50% 68%, #2a3841 69%); }
+.preview-city { background: linear-gradient(155deg, transparent 50%, #0b1222 51%), repeating-linear-gradient(90deg, #273555 0 14%, #10192b 15% 27%); }
+.preview-forest { background: repeating-linear-gradient(115deg, #17291f 0 15%, #315242 16% 27%, #101c18 28% 38%); }
+
+.quality-row {
+  position: relative;
+  z-index: 1;
+  min-height: 3.5rem;
+  padding: .6rem .7rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid rgba(224,232,250,.1);
+  border-radius: .85rem;
+  background: rgba(255,255,255,.025);
+}
+
+.quality-row label > span { font-size: .76rem; font-weight: 700; }
+
+#quality-select {
+  min-width: 6.8rem;
+  min-height: 2.65rem;
+  padding: .5rem .75rem !important;
+  border: 1px solid rgba(224,232,250,.16);
+  border-radius: .7rem;
+  background: var(--observatory-strong);
+  color: var(--moon-paper) !important;
+  font-size: .74rem !important;
+}
+
+.fx-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: .45rem;
+}
+
+.fx-toggle {
+  min-width: 0;
+  min-height: 3.6rem;
+  padding: .55rem .45rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: .08rem;
+  border: 1px solid rgba(224,232,250,.1);
+  border-radius: .8rem;
+  background: rgba(255,255,255,.025);
+  color: var(--mist);
+  text-align: left;
+}
+
+.fx-toggle span { font-size: .72rem; font-weight: 700; }
+.fx-toggle[aria-pressed='true'] { border-color: rgba(117,213,230,.35); background: rgba(117,213,230,.08); color: var(--aether-cyan); }
+
+#track-row {
+  position: relative;
+  z-index: 5;
+  width: min(38rem, calc(100cqw - 2rem));
+  min-height: 4.1rem;
+  padding: 0 !important;
+  align-items: center;
+  gap: .55rem;
+  flex-wrap: wrap;
+  color: var(--moon-paper);
+  background: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  overflow: visible;
+}
+
+#track-row::before { content: none !important; display: none !important; }
+
+#track-input {
+  flex: 1 1 14rem;
+  min-height: 2.75rem;
+  padding: .55rem .7rem !important;
+  border: 1px solid rgba(224,232,250,.16) !important;
+  border-radius: .72rem;
+  background: linear-gradient(155deg, rgba(18,29,49,.97), rgba(7,14,26,.96)) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 16px 44px -28px rgba(0,0,0,.92);
+  color: var(--moon-paper) !important;
+}
+
+#track-input[aria-invalid='true'] {
+  border-color: var(--ember) !important;
+  box-shadow: 0 0 0 3px rgba(255,129,120,.13);
+}
+
+#track-error { flex: 1 1 100%; order: 5; color: var(--ember); }
+#track-add, #track-cancel { min-height: 2.75rem; padding-inline: .8rem !important; }
+#track-add {
+  border-radius: .72rem !important;
+  background: var(--solar-gold);
+  color: var(--observatory-strong) !important;
+}
+#track-cancel { border-radius: .72rem !important; }
+
+.orbit-confirm {
+  width: min(30rem, calc(100cqw - 2rem));
+  min-height: 5rem;
+  padding: .75rem .85rem !important;
+  justify-content: space-between;
+  gap: 1rem !important;
+}
+
+.confirm-copy { display: flex; flex-direction: column; gap: .1rem; text-align: left; }
+.confirm-actions { display: flex; gap: .35rem; }
+.confirm-actions .ctrl-btn { min-height: 2.75rem; padding: .55rem .8rem !important; }
+.danger-action { background: rgba(255,129,120,.13); color: var(--ember) !important; }
+
+/* PIN overlay */
+#room-auth {
+  z-index: 60;
+  background: rgba(4,8,16,.72) !important;
+  backdrop-filter: blur(16px) saturate(110%) !important;
+}
+
+.auth-card {
+  width: min(24rem, calc(100cqw - 2rem));
+  padding: 2rem 1.7rem !important;
+  gap: 1rem !important;
+  background: linear-gradient(155deg, rgba(18,29,49,.98), rgba(7,14,26,.98)) !important;
+}
+
+.auth-orbit {
+  width: 3.5rem;
+  height: 3.5rem;
+  fill: none;
+  stroke: var(--solar-gold);
+  stroke-width: 1;
+}
+
+.auth-kicker { margin: 0 0 .25rem; color: var(--solar-gold); font-size: .62rem; font-weight: 750; letter-spacing: .16em; }
+#room-auth-title { margin: 0; color: var(--moon-paper); font-family: var(--font-display); font-size: 1.55rem; font-weight: 400; }
+#room-pin-input { width: min(15rem, 100%) !important; min-height: 3.2rem; border: 1px solid rgba(224,232,250,.2) !important; border-radius: .8rem; background: rgba(255,255,255,.04) !important; color: var(--moon-paper) !important; font-size: 1.1rem; letter-spacing: .25em; }
+.auth-submit { min-width: 10rem; min-height: 3rem; padding: .7rem 1rem; border-radius: var(--radius-pill); background: var(--solar-gold); color: var(--observatory-strong); font-size: .8rem; font-weight: 750; }
+
+/* During a session, everything peripheral yields to the timer. */
+body.is-session #hud-tl,
+body.is-session #time-dial,
+body.is-session #dur-chips,
+body.is-session .focus-intro {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+body.is-session #hud-tr .hud-chip,
+body.is-session #clock,
+body.is-session #date-label,
+body.is-session #conn-dot {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+body.is-session #controls { opacity: .22 !important; }
+body.is-session #controls:hover,
+body.is-session #controls:focus-within { opacity: 1 !important; }
+
+body.panel-open #time-dial,
+body.panel-open #music-bar { opacity: 0 !important; pointer-events: none !important; }
+
+@media (max-width: 920px) {
+  body.quiet-orbit { --room-edge: .95rem; }
+
+  .brand-wordmark { font-size: 1.25rem; }
+  .brand-orbit { width: 1.75rem; height: 1.75rem; }
+  .session-caption { display: none; }
+  .time-chip { min-width: 8rem; }
+  .connection-copy { display: none; }
+
+  #center-cluster { margin-top: -2.25rem; }
+  .focus-btn { --focus-diameter: 15.5rem; }
+  .focus-duration { font-size: 4rem; }
+
+  #time-dial { bottom: 9.4rem !important; }
+  #time-dial > .liquid-glass { min-width: 12.25rem !important; padding: .55rem .65rem !important; }
+  #time-slider { width: 7.5rem !important; }
+
+  #controls { bottom: .75rem !important; gap: .5rem !important; }
+  #music-bar { min-height: 3.25rem; }
+  #action-bar { width: min(100%, 25rem); min-height: 3.75rem; }
+  .dock-button { min-width: 0; flex: 1 1 0; min-height: 3rem; padding-inline: .35rem !important; }
+
+  .orbit-panel,
+  #display-panel,
+  #track-row,
+  .orbit-confirm {
+    position: fixed;
+    left: .75rem;
+    right: .75rem;
+    bottom: 5.35rem;
+    width: auto;
+    max-height: min(72vh, 34rem);
+    overflow-y: auto;
+  }
+
+  .scene-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fx-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+  .status-toast {
+    top: auto;
+    right: var(--room-edge);
+    bottom: 9.25rem;
+    width: max-content;
+    text-align: right;
+    transform: none;
+  }
+
+  .status-toast:empty {
+    transform: translateY(-.5rem);
+  }
+
+  #hud-tl { gap: .5rem; }
+  .brand-lockup { gap: .45rem; }
+  .brand-wordmark { font-size: 1.1rem; }
+  .brand-orbit { width: 1.45rem; height: 1.45rem; }
+  .hud-chip { min-height: 2.2rem; padding: .42rem .6rem; border-radius: .75rem; }
+  .room-chip .hud-rule,
+  .room-chip .session-caption,
+  .room-chip #sessions { display: none; }
+  .room-chip { max-width: 9.25rem; }
+  #room-label { max-width: 5.5rem; }
+  .dial-header { display: flex !important; }
+  #date-label { font-size: .65rem; }
+
+  .focus-intro { font-size: .7rem; }
+  .focus-btn { --focus-diameter: 14.5rem; padding: 1.65rem !important; }
+  .focus-duration { font-size: 3.65rem; }
+  .focus-action { min-height: 2.35rem; font-size: .75rem; }
+  .dur-segment { min-width: 4.25rem; min-height: 2.35rem; }
+
+  #pom-time { font-size: clamp(5.1rem, 25cqw, 7.4rem) !important; }
+  #pomodoro { gap: 1.25rem !important; }
+
+  #time-dial { bottom: 9.2rem !important; }
+  #time-dial > .liquid-glass { min-width: 11.75rem !important; }
+
+  #music-bar { width: min(100%, 23rem); }
+  .music-identity small { display: none; }
+  .music-identity strong { max-width: 7rem; overflow: hidden; text-overflow: ellipsis; }
+  #action-bar { width: min(100%, 23rem); }
+  .dock-button { font-size: .65rem !important; }
+}
+
+/* Short portrait browsers lose vertical space to the address/search bar.
+   Collapse the sky instrument to one row so it clears the duration selector
+   without moving into the campfire's open lower-right composition. */
+@container room-stage (min-height: 601px) and (max-height: 740px) and (max-width: 600px) {
+  #time-dial > .liquid-glass {
+    width: 12.5rem;
+    min-width: 0 !important;
+    min-height: 3rem;
+    max-height: 3rem;
+    padding: .3rem .45rem !important;
+    flex-direction: row !important;
+    align-items: center;
+    gap: .35rem !important;
+  }
+  .dial-header { display: contents !important; }
+  .dial-header > div:first-child { display: none !important; }
+  #time-dial > .liquid-glass > div:last-child { gap: 0 !important; }
+  #time-dial > .liquid-glass > div:last-child > span { display: none !important; }
+  #time-slider { width: 4.75rem !important; }
+  #btn-reset-time { min-width: 2.5rem; min-height: 2.25rem; padding: .25rem .5rem; }
+}
+
+/* Full-width desktop windows between laptop and browser-toolbar heights need
+   the ritual slightly above centre so its duration chips clear the player. */
+@container room-stage (min-width: 921px) and (max-height: 800px) {
+  #center-cluster {
+    top: clamp(-3rem, calc(30cqh - 14.75rem), 0rem);
+  }
+}
+
+@container room-stage (max-height: 600px) {
+  #hud-tl { gap: .35rem; }
+  .brand-lockup { display: none; }
+  #date-label { display: none; }
+
+  #center-cluster { margin-top: -2.5rem; gap: .55rem !important; }
+  .focus-intro { display: none; }
+  .focus-btn { --focus-diameter: 11.25rem; padding: 1.2rem !important; }
+  .focus-kicker { font-size: .6rem; }
+  .focus-duration { font-size: 2.85rem; }
+  .focus-action { min-height: 2rem; margin-top: .15rem; padding: .4rem .7rem; font-size: .68rem; }
+  #dur-chips { transform: scale(.9); }
+
+  #pom-time { font-size: clamp(4.6rem, 18cqw, 7rem) !important; }
+  #pomodoro { gap: .8rem !important; }
+  .pom-phase { font-size: .65rem; }
+
+  .status-toast {
+    top: 3.65rem;
+    right: .65rem;
+    bottom: auto;
+  }
+
+  #time-dial {
+    top: 4.1rem !important;
+    right: auto !important;
+    bottom: auto !important;
+    left: calc(50% - 7.5rem) !important;
+    transform: none !important;
+  }
+  #time-dial > .liquid-glass {
+    width: 15rem;
+    min-width: 0 !important;
+    min-height: 2.9rem;
+    padding: .3rem .45rem !important;
+    flex-direction: row !important;
+    align-items: center;
+    gap: .35rem !important;
+  }
+  .dial-header { display: flex !important; flex: 1 1 auto; }
+  .dial-header > div:first-child { display: none !important; }
+  #btn-reset-time { min-width: 2.75rem; min-height: 2.75rem; }
+  #time-dial > .liquid-glass > div:last-child { gap: .2rem !important; }
+  #time-dial > .liquid-glass > div:last-child > span { display: none; }
+  #time-slider { width: 5rem !important; }
+
+  #controls { gap: .3rem !important; bottom: .45rem !important; }
+  #music-bar { min-height: 2.8rem; }
+  #action-bar { min-height: 3.35rem; }
+  .dock-button { min-height: 2.7rem; }
+
+  .orbit-panel,
+  #display-panel,
+  #track-row,
+  .orbit-confirm { bottom: 4.5rem; max-height: calc(100cqh - 5.2rem); }
+}
+
+/* At the 901px responsive seam a short desktop still uses the compact focus
+   ritual, but the generic short-window rule above would center the sky dial
+   directly over the circle. Give wider short windows a left utility lane. */
+@container room-stage (min-width: 601px) and (max-height: 600px) {
+  #time-dial {
+    top: 4.5rem !important;
+    left: .65rem !important;
+  }
+}
+
+/* Compact 4:3 desktop windows keep the time instrument in the lower-left
+   utility lane, away from the sun and moon's upper-centre path. */
+@media (min-width: 921px) and (max-width: 1100px) and (min-height: 508px) and (orientation: landscape) and (hover: hover) and (pointer: fine) {
+  #time-dial {
+    top: auto !important;
+    right: auto !important;
+    bottom: var(--room-edge) !important;
+    left: var(--room-edge) !important;
+    transform: none !important;
+  }
+
+  #time-dial > .liquid-glass {
+    width: auto;
+    min-width: 12.25rem !important;
+    padding: .55rem .65rem !important;
+  }
+
+  #time-slider { width: 7.5rem !important; }
+}
+
+@media (orientation: landscape) and (max-height: 480px) {
+  #center-cluster {
+    margin-top: -.45rem;
+    gap: .45rem !important;
+    transform: none;
+  }
+
+  .focus-btn {
+    --focus-diameter: 9.5rem;
+    padding: 1rem !important;
+  }
+
+  .focus-duration { font-size: 2.5rem; }
+  .focus-action { min-height: 2.15rem; margin-top: .1rem; }
+  #dur-chips { transform: scale(.86); }
+
+  .status-toast {
+    top: 3.95rem;
+    right: .7rem;
+    bottom: auto;
+    max-width: min(20rem, calc(100vw - 1.4rem));
+  }
+
+  #time-dial {
+    top: 4.25rem !important;
+    left: .65rem !important;
+    bottom: auto !important;
+    transform: none;
+  }
+  #time-dial > .liquid-glass { width: 13rem; }
+  #controls {
+    right: .65rem !important;
+    bottom: .55rem !important;
+    left: auto !important;
+    width: auto;
+    padding: 0 !important;
+    flex-direction: row !important;
+    align-items: flex-end !important;
+  }
+  #music-bar {
+    position: static;
+    width: 9rem;
+    min-height: 3.35rem;
+    padding: .3rem .35rem !important;
+  }
+  #music-bar .music-identity { display: none; }
+  #music-bar .music-actions { width: 100%; justify-content: space-between; }
+  #action-bar { width: 22rem; }
+
+  body.track-panel-open #controls {
+    left: 0 !important;
+    right: 0 !important;
+    align-items: center !important;
+    width: auto !important;
+  }
+
+  body.track-panel-open #track-row {
+    width: min(34rem, calc(100vw - 1.5rem)) !important;
+    max-width: calc(100vw - 1.5rem);
+    flex-flow: row wrap !important;
+  }
+
+  body.track-panel-open #track-input {
+    flex: 1 0 100% !important;
+    width: 100% !important;
+    min-width: 0;
+  }
+}
+
+@media (pointer: coarse) and (min-width: 901px) and (orientation: landscape) {
+  #time-dial {
+    bottom: 11.4rem !important;
+  }
+}
+
+@media (pointer: coarse), (max-width: 900px), (orientation: landscape) and (max-height: 480px) {
+  .copy-room,
+  .icon-button,
+  #btn-reset-time,
+  #track-add,
+  #track-cancel {
+    min-width: 2.75rem !important;
+    min-height: 2.75rem !important;
+  }
+
+  .copy-room {
+    width: 2.75rem !important;
+    height: 2.75rem !important;
+    margin: -.65rem -.55rem;
+  }
+
+  .dur-segment {
+    min-height: 2.75rem !important;
+  }
+
+  #dur-chips {
+    transform: none !important;
+  }
+
+  #time-slider {
+    min-height: 2.75rem !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .focus-btn::after,
+  #conn-dot,
+  .eq i,
+  .t-colon.paused {
+    animation: none !important;
+  }
+
+  #controls,
+  .focus-btn,
+  .scene-option,
+  .fx-toggle {
+    transition-duration: .08s !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .focus-btn,
+  .dock-button,
+  .scene-option,
+  .fx-toggle,
+  #quality-select,
+  #track-input {
+    border: 1px solid ButtonText !important;
+  }
+}

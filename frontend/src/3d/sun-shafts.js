@@ -39,10 +39,16 @@ const ShaftsBlurShader = {
     varying vec2 vUv;
 
     float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+    float hash12(vec2 p) {
+      return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+    }
 
     void main() {
       vec2 uv = vUv;
       vec2 stepUv = (uLightPos - vUv) * (uDensity / float(${BLUR_SAMPLES}));
+      // A static half-sample offset breaks radial banding without adding the
+      // temporal shimmer that becomes tiring behind a 50-minute timer.
+      uv += stepUv * (hash12(gl_FragCoord.xy) - 0.5);
       float illum = 1.0;
       vec3 acc = vec3(0.0);
       for (int i = 0; i < ${BLUR_SAMPLES}; i++) {
@@ -50,7 +56,8 @@ const ShaftsBlurShader = {
         vec3 s = texture2D(tDiffuse, clamp(uv, 0.001, 0.999)).rgb;
         // Luminance gate: only genuinely bright sources scatter. Without it
         // the whole frame smears toward the light instead of forming rays.
-        s *= smoothstep(0.28, 0.95, luma(s));
+        float source = smoothstep(0.4, 1.08, luma(s));
+        s *= source * source;
         acc += s * illum;
         illum *= uDecay;
       }
@@ -82,12 +89,19 @@ const ShaftsCompositeShader = {
   `,
 };
 
-export function createSunShaftsPass(width, height) {
+export function createSunShaftsPass(
+  width,
+  height,
+  { textureType = THREE.HalfFloatType } = {},
+) {
   const pass = new Pass();
   pass.needsSwap = true;
+  const safeTextureType = textureType === THREE.HalfFloatType
+    ? THREE.HalfFloatType
+    : THREE.UnsignedByteType;
 
   const rt = new THREE.WebGLRenderTarget(Math.max(1, width >> 1), Math.max(1, height >> 1), {
-    type: THREE.HalfFloatType,
+    type: safeTextureType,
     depthBuffer: false,
   });
 
@@ -134,6 +148,7 @@ export function createSunShaftsPass(width, height) {
 
   return {
     pass,
+    textureType: safeTextureType,
     /** Screen-space light position in UV coords; intensity 0 disables cleanly. */
     setLight(uvX, uvY, intensity, tint) {
       blurMat.uniforms.uLightPos.value.set(uvX, uvY);

@@ -85,11 +85,9 @@ export function createTimerControls({ getState, send }) {
       const minutes = parseInt(btn.dataset.min, 10);
       const state = getState();
       const activeMin = state ? Math.round(state.pomodoro_duration / 60) : null;
-      if (minutes === activeMin) {
-        send({ type: "focus_toggle" });
-        focusWhenShown("focus-row", "btn-pause-timer");
-      }
-      else setDur(minutes);
+      // Duration chips only choose a duration. Starting a shared session is a
+      // deliberate action owned by the single primary "집중 시작" button.
+      if (minutes !== activeMin) setDur(minutes);
     });
   });
 

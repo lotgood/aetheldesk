@@ -55,6 +55,7 @@ Run commands from the repository root unless a row says otherwise.
 | `uv run pytest tests/e2e -m e2e --browser chromium -q` | Run Playwright browser e2e. | CI e2e gate and local regression gate for user-visible flows. |
 | `npm ci` | Install locked frontend dependencies from `package-lock.json`. | Docker frontend build stage and clean frontend setup. |
 | `npm run dev` | Start the Vite dev server on `0.0.0.0`. | Local frontend dev with backend proxy. |
+| `npm run test:frontend` | Run atmosphere-transition, scene-manager lazy-load, and fallback unit tests. | Required frontend behavior gate. |
 | `npm run build` | Build production Vite assets into `frontend/dist`. | Required local and CI frontend gate. |
 | `docker compose up --build --detach` | Build and start the app plus Redis. | Docker self-host setup and CI Compose health gate where Docker exists. |
 | `docker compose ps` | Check Compose service health. | App and Redis should be healthy after startup. |
@@ -173,8 +174,9 @@ CI and local release checks should cover these gates:
 6. `uv run playwright install chromium`
 7. `uv run pytest tests/e2e -m e2e --browser chromium -q`
 8. `npm ci`
-9. `npm run build`
-10. Docker Compose build, app health, and Redis AOF health where Docker is installed
+9. `npm run test:frontend`
+10. `npm run build`
+11. Docker Compose build, app health, and Redis AOF health where Docker is installed
 
 For delegated tasks, save concise command output or summaries under `.omo/evidence/task-{N}-{slug}.txt`. When a gate cannot run because the host lacks a tool, record the exact blocker and do not mark the gate as passed.
 

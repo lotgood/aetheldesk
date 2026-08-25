@@ -21,6 +21,17 @@ jobs:
       - name: Set up Python
         run: uv python install 3.12
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Build host frontend for Playwright fixture
+        run: |
+          npm ci
+          npm run build
+
       - name: Sync dependencies
         run: uv sync --frozen
 
@@ -61,7 +72,9 @@ jobs:
         run: npm ci
 
       - name: Build frontend
-        run: npm run build
+        run: |
+          npm run test:frontend
+          npm run build
 
   e2e:
     name: Playwright e2e

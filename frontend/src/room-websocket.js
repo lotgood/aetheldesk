@@ -1,6 +1,6 @@
 import { clearRoomToken, readRoomToken } from "./storage.js";
 
-export function createRoomSocket({ roomId, connDot, connStatus, auth, onState }) {
+export function createRoomSocket({ roomId, connDot, connStatus, connCopy, auth, onState }) {
   let ws = null;
   let reconnectAttempt = 0;
   let reconnectTimer = null;
@@ -23,18 +23,21 @@ export function createRoomSocket({ roomId, connDot, connStatus, auth, onState })
     const token = readRoomToken(roomId);
     if (!token) {
       connStatus.textContent = "방 PIN 확인이 필요합니다.";
+      if (connCopy) connCopy.textContent = "PIN 필요";
       auth.show("");
       return;
     }
 
     auth.hide();
     connStatus.textContent = "방 연결을 시도하고 있습니다.";
+    if (connCopy) connCopy.textContent = "연결 중";
     ws = new WebSocket(wsUrl(token));
 
     ws.addEventListener("open", () => {
       reconnectAttempt = 0;
       connDot.style.opacity = "0.35";
       connStatus.textContent = "방이 연결되었습니다. 함께 동기화 중입니다.";
+      if (connCopy) connCopy.textContent = "연결됨";
       navigator.permissions?.query({ name: "geolocation" }).then(result => {
         if (result.state === "granted") {
           navigator.geolocation.getCurrentPosition(
@@ -59,11 +62,13 @@ export function createRoomSocket({ roomId, connDot, connStatus, auth, onState })
       if (event.code === 1008) {
         clearRoomToken(roomId);
         connStatus.textContent = "방 PIN 확인이 필요합니다.";
+        if (connCopy) connCopy.textContent = "PIN 필요";
         auth.show("입장할 수 없습니다");
         return;
       }
       const delay = Math.min(30000, 1000 * 2 ** reconnectAttempt++);
       connStatus.textContent = "방 연결이 끊겨 다시 연결하고 있습니다.";
+      if (connCopy) connCopy.textContent = "재연결 중";
       clearReconnect();
       reconnectTimer = setTimeout(connect, delay);
     };

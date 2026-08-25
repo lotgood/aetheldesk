@@ -28,15 +28,67 @@ export function setHiddenInteraction(root, hidden) {
   root.setAttribute("aria-hidden", hidden ? "true" : "false");
   [root, ...root.querySelectorAll("button, input, select, textarea, a[href], iframe, [tabindex]")].forEach(el => {
     if (hidden) {
-      if (!el.dataset.originalTabIndex && el.hasAttribute("tabindex")) el.dataset.originalTabIndex = el.getAttribute("tabindex");
+      // Idempotence matters: renderers call this for every server snapshot.
+      // Without a sentinel, a second hidden call mistakes our own -1 for the
+      // original value and permanently removes the control from the tab order.
+      if (el.dataset.interactionHidden === "true") return;
+      el.dataset.interactionHidden = "true";
+      el.dataset.originalTabIndex = el.hasAttribute("tabindex") ? el.getAttribute("tabindex") : "__none__";
       el.setAttribute("tabindex", "-1");
-    } else if (el.dataset.originalTabIndex) {
-      el.setAttribute("tabindex", el.dataset.originalTabIndex);
-      delete el.dataset.originalTabIndex;
     } else {
-      el.removeAttribute("tabindex");
+      if (el.dataset.interactionHidden !== "true") return;
+      if (el.dataset.originalTabIndex === "__none__") el.removeAttribute("tabindex");
+      else el.setAttribute("tabindex", el.dataset.originalTabIndex);
+      delete el.dataset.originalTabIndex;
+      delete el.dataset.interactionHidden;
     }
   });
+}
+
+let activeModalRoot = null;
+
+function setModalSiblingHidden(el, hidden) {
+  if (hidden) {
+    if (el.dataset.modalIsolationHidden === "true") return;
+    el.dataset.modalIsolationHidden = "true";
+    el.dataset.modalOriginalAriaHidden = el.hasAttribute("aria-hidden") ? el.getAttribute("aria-hidden") : "__none__";
+    el.dataset.modalOriginalInert = el.hasAttribute("inert") ? "true" : "false";
+    el.setAttribute("aria-hidden", "true");
+    el.toggleAttribute("inert", true);
+    return;
+  }
+
+  if (el.dataset.modalIsolationHidden !== "true") return;
+  if (el.dataset.modalOriginalAriaHidden === "__none__") el.removeAttribute("aria-hidden");
+  else el.setAttribute("aria-hidden", el.dataset.modalOriginalAriaHidden);
+  el.toggleAttribute("inert", el.dataset.modalOriginalInert === "true");
+  delete el.dataset.modalIsolationHidden;
+  delete el.dataset.modalOriginalAriaHidden;
+  delete el.dataset.modalOriginalInert;
+}
+
+function walkModalSiblings(root, callback) {
+  let current = root;
+  while (current?.parentElement) {
+    for (const sibling of current.parentElement.children) {
+      if (sibling === current || sibling.tagName === "SCRIPT" || sibling.tagName === "STYLE") continue;
+      callback(sibling);
+    }
+    current = current.parentElement;
+  }
+}
+
+export function setModalIsolation(root, active) {
+  if (active) {
+    if (activeModalRoot && activeModalRoot !== root) setModalIsolation(activeModalRoot, false);
+    walkModalSiblings(root, sibling => setModalSiblingHidden(sibling, true));
+    activeModalRoot = root;
+    return;
+  }
+
+  if (activeModalRoot !== root) return;
+  walkModalSiblings(root, sibling => setModalSiblingHidden(sibling, false));
+  activeModalRoot = null;
 }
 
 export function createFocusTrap(dialog, { initialFocus, onCancel } = {}) {

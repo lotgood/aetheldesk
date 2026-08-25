@@ -27,6 +27,13 @@ const STOPS = [
     // practically a black screen. The floor comes up so silhouettes read.
     ambientIntensity: 0.62,
     exposure: 1.06,
+    rayleighStrength: 0.08,
+    mieStrength: 0.0,
+    mieG: 0.72,
+    twilightStrength: 0.0,
+    nightStrength: 1.0,
+    cloudLight: 0.34,
+    cloudOpacity: 0.36,
   },
   {
     elev: -12, // nautical twilight
@@ -46,6 +53,13 @@ const STOPS = [
     ambientGround: "#12141f",
     ambientIntensity: 0.5,
     exposure: 1.05,
+    rayleighStrength: 0.16,
+    mieStrength: 0.04,
+    mieG: 0.74,
+    twilightStrength: 0.28,
+    nightStrength: 0.86,
+    cloudLight: 0.38,
+    cloudOpacity: 0.42,
   },
   {
     elev: -4, // civil twilight / blue hour
@@ -62,6 +76,13 @@ const STOPS = [
     ambientGround: "#1b1c28",
     ambientIntensity: 0.58,
     exposure: 1.04,
+    rayleighStrength: 0.46,
+    mieStrength: 0.34,
+    mieG: 0.78,
+    twilightStrength: 0.92,
+    nightStrength: 0.38,
+    cloudLight: 0.54,
+    cloudOpacity: 0.62,
   },
   {
     elev: 2, // golden hour
@@ -81,6 +102,13 @@ const STOPS = [
     ambientGround: "#3a3a42",
     ambientIntensity: 0.66,
     exposure: 1.02,
+    rayleighStrength: 0.78,
+    mieStrength: 0.76,
+    mieG: 0.82,
+    twilightStrength: 1.0,
+    nightStrength: 0.04,
+    cloudLight: 0.86,
+    cloudOpacity: 0.88,
   },
   {
     elev: 12, // warm morning / late afternoon
@@ -97,33 +125,66 @@ const STOPS = [
     ambientGround: "#55555c",
     ambientIntensity: 0.72,
     exposure: 1.0,
+    rayleighStrength: 0.94,
+    mieStrength: 0.52,
+    mieG: 0.8,
+    twilightStrength: 0.46,
+    nightStrength: 0.0,
+    cloudLight: 0.94,
+    cloudOpacity: 0.96,
   },
   {
     elev: 45, // midday
     // A sky with no geometry in it carries the frame on its own gradient, so
     // the zenith has to sit well under the horizon or the whole dome reads
     // as one flat bright field.
-    skyTop: "#2f5d8c",
+    skyTop: "#256fa7",
     // The camera sits on the horizon line, so this stop covers most of the
     // frame — it was the brightest value in the palette, which is why every
     // daylight frame measured as a flat bright field.
-    skyHorizon: "#6c8299",
-    skyBottom: "#3d6187",
+    skyHorizon: "#789bb7",
+    skyBottom: "#386f9d",
     sun: "#fff4e0",
     sunIntensity: 1.0,
-    fog: "#7d8b9b",
-    fogDensity: 0.0011,
+    fog: "#70869a",
+    // Keep distant silhouettes atmospheric without compressing the entire
+    // city, forest and beach into the same pale value at noon.
+    fogDensity: 0.00085,
     key: "#fff3df",
     keyIntensity: 2.15,
-    ambientSky: "#bcd2e8",
-    ambientGround: "#5f6067",
+    ambientSky: "#afc9e0",
+    ambientGround: "#62646a",
     ambientIntensity: 0.78,
     exposure: 0.98,
+    rayleighStrength: 1.0,
+    mieStrength: 0.36,
+    mieG: 0.78,
+    twilightStrength: 0.0,
+    nightStrength: 0.0,
+    cloudLight: 1.0,
+    cloudOpacity: 1.0,
   },
 ];
 
 const COLOR_KEYS = ["skyTop", "skyHorizon", "skyBottom", "sun", "fog", "key", "ambientSky", "ambientGround"];
-const SCALAR_KEYS = ["sunIntensity", "fogDensity", "keyIntensity", "ambientIntensity", "exposure"];
+const SCALAR_KEYS = [
+  "sunIntensity",
+  "fogDensity",
+  "keyIntensity",
+  "ambientIntensity",
+  "exposure",
+  // Lightweight radiative controls. The dome consumes these as continuous
+  // phase-function weights rather than switching shader modes at twilight.
+  "rayleighStrength",
+  "mieStrength",
+  "mieG",
+  "twilightStrength",
+  "nightStrength",
+  // The sky scene shares the same state so its clouds cannot lag behind the
+  // dome when a remote participant scrubs the room time.
+  "cloudLight",
+  "cloudOpacity",
+];
 
 function blankGrade() {
   const grade = {};
@@ -176,11 +237,15 @@ export function gradeForElevation(elev, out) {
 export function createAtmosphere({ smoothing = 1.5 } = {}) {
   const target = gradeForElevation(-90);
   const current = gradeForElevation(-90);
-  let elevation = -90;
+  let targetElevation = -90;
+  let currentElevation = -90;
+  let targetDaylight = 0;
+  let currentDaylight = 0;
 
   function setElevation(elev) {
     if (typeof elev !== "number" || Number.isNaN(elev)) return;
-    elevation = elev;
+    targetElevation = elev;
+    targetDaylight = Math.min(1, Math.max(0, (elev + 6) / 18));
     gradeForElevation(elev, target);
   }
 
@@ -189,6 +254,12 @@ export function createAtmosphere({ smoothing = 1.5 } = {}) {
     const f = delta > 0.5 ? 1 : 1 - Math.exp(-smoothing * delta);
     for (const k of COLOR_KEYS) current[k].lerp(target[k], f);
     for (const k of SCALAR_KEYS) current[k] += (target[k] - current[k]) * f;
+    currentDaylight += (targetDaylight - currentDaylight) * f;
+    // Consumers that derive geometry or effect strength from elevation must
+    // see the same temporal state as the palette. Keeping the target value
+    // here made a midnight-to-noon jump report 45 degrees while the frame was
+    // still 97% night, producing daylight shafts in a night sky.
+    currentElevation += (targetElevation - currentElevation) * f;
   }
 
   return {
@@ -197,15 +268,21 @@ export function createAtmosphere({ smoothing = 1.5 } = {}) {
     setElevation,
     update,
     get elevation() {
-      return elevation;
+      return currentElevation;
+    },
+    get targetElevation() {
+      return targetElevation;
     },
     /** True once the sun is below the horizon; scenes use it for lamps/fire. */
     get isNight() {
-      return elevation <= 0;
+      return currentElevation <= 0;
     },
     /** 0 at night, 1 in full day — scenes fade night details with this. */
     get daylight() {
-      return Math.min(1, Math.max(0, (elevation + 6) / 18));
+      // This scalar uses the same easing as the palette. A test-time jump
+      // from midnight to noon should not pop windows, boats and fireflies to
+      // their final state while the sky is still cross-fading.
+      return currentDaylight;
     },
   };
 }

@@ -23,8 +23,21 @@ These decisions guide later waves without changing the Wave 1 runtime contracts 
 | Workflows | Docker Compose and local `uv run` are first-class workflows. The command matrix anchors are `uv sync --frozen`, `uv run ruff format --check .`, `uv run ruff check .`, `uv run pyright`, `uv run pytest -q`, `uv run pytest tests/e2e -m e2e --browser chromium -q`, `npm run build`, and `docker compose up --build --detach`. |
 | Redis policy | Redis is mandatory for Docker/prod and cross-worker behavior. The in-memory fallback is only for tests and local no-Redis development. Redis outages are normalized to the existing HTTP `503 {"detail":"redis unavailable"}` and WebSocket `1011 service unavailable` operational contracts. |
 | UI language | The UI is Korean-primary for interactive controls, validation errors, live regions, and status text. Brand, `PIN`, YouTube terms, API fields, and storage keys stay stable. A full i18n toggle is out of scope for this plan. |
-| External frontend dependencies | The YouTube iframe API remains allowed and is the only external request. Tailwind CSS is compiled locally into `frontend/tailwind.css` (via `npm run build:css`), and Google Fonts (Inter variable, Instrument Serif) are self-hosted in `frontend/fonts/` with `frontend/fonts.css`. The app works fully offline. |
+| External frontend dependencies | The YouTube iframe API remains allowed and is the only external request. Tailwind CSS is compiled locally into `frontend/tailwind.css` (via `npm run build:css`), Google Fonts (Inter variable, Instrument Serif) are self-hosted in `frontend/fonts/` with `frontend/fonts.css`, and the Quiet Orbit page layers live in `frontend/lobby.css` and `frontend/room.css`. The app works fully offline except for YouTube playback. |
 | Excluded systems | SQL/accounts/analytics, Redis Streams, Celery, Kubernetes, TLS automation, React, Vue, Svelte, TypeScript, and reverse-proxy config changes remain out of scope. |
+
+## Quiet Orbit Frontend Contract
+
+Quiet Orbit is the current presentation and interaction contract. It changes the visual shell without changing the REST, WebSocket, Redis, or `BackendState` boundaries below.
+
+- The lobby presents room creation and room-code entry as distinct actions while retaining `#btn-start`, `#code-toggle`, `#code-section`, `#room-input`, `#btn-join`, and the existing create/join APIs.
+- The room keeps one primary `#focus-btn`. Duration options only choose the shared duration; they never start a session themselves. `#idle-duration` mirrors the selected duration inside the primary control.
+- The persistent HUD exposes a selectable room code, `#btn-copy-room`, visible `#conn-copy` connection text, and the visible/live `#room-status` status surface.
+- Shared music controls remain available to every connected participant, including clients without a locally saved playlist. Playlist customization remains client-local while play/pause/skip remains server-authoritative room state.
+- `#btn-scene` opens the labelled `#scene-panel`; its four `[data-scene]` options are `sky`, `city`, `beach`, and `forest`, expose `aria-pressed`, and persist the selected `scene` locally.
+- Scene, display, track, and exit surfaces coordinate as mutually exclusive panels and retain focus management, hidden-interaction handling, and Korean status announcements.
+- Focus and break progress must be derived only from canonical `BackendState` fields. The frontend must not invent or read a `break_duration` field.
+- `frontend/velorah.css` owns shared tokens and primitives. `frontend/lobby.css` and `frontend/room.css` own page-specific Quiet Orbit layout and responsive styling.
 
 ## Route Matrix
 
@@ -82,7 +95,7 @@ Event envelopes are created by `make_event_envelope()` and include `version`, no
 
 | Field | Type / shape | Baseline semantics |
 |---|---|---|
-| `celestial` | `dict[str, object]` | Current celestial presentation data from `get_celestial_state()`. |
+| `celestial` | `dict[str, object]` | Current celestial presentation data from `get_celestial_state()`: solar `elevation` / `arc_pct`, server-authoritative illustrative `night_arc_pct`, `phase`, `gradient`, and timezone-aware `iso`. |
 | `focus` | `bool` | Whether a focus session is active. |
 | `paused` | `bool` | Whether an active focus session is paused. |
 | `pomodoro_remaining` | `int` | Remaining focus seconds; default `3000`. |
@@ -100,8 +113,10 @@ Accepted client mutation message types are handled in `backend/state.py`: `time_
 | Storage | Key | Source | Contract | Tests |
 |---|---|---|---|---|
 | `sessionStorage` | `room_token:{ROOM_ID}` | `frontend/src/storage.js` `tokenStorageKey()`; `frontend/lobby.js` create/join handlers | Room tokens are stored per normalized uppercase room id under `room_token:{ROOM_ID}` only. Room tokens are read, set, and removed from `sessionStorage`; they must not be stored in `localStorage` or URL PIN parameters. | `tests/test_frontend_static.py`; e2e PIN tests. |
-| `localStorage` | `playlist` | `frontend/src/storage.js` `readPlaylist()`; `frontend/src/music-youtube.js` `submitTrack()` | Playlist customization is the only `localStorage` key owned by `frontend/app.js`. It stores JSON YouTube ids and is not used for room tokens. | `tests/test_frontend_static.py::test_frontend_persists_only_playlist_and_scene_local_storage_keys`. |
-| `localStorage` | `scene` | `frontend/scenes.js` `activeScene` and `switchScene()` | Scene selection is persisted in `localStorage` under `scene` only. | `tests/test_frontend_static.py::test_frontend_persists_only_playlist_and_scene_local_storage_keys`. |
+| `localStorage` | `playlist` | `frontend/src/storage.js` `readPlaylist()`; `frontend/src/music-youtube.js` `submitTrack()` | Stores the client's JSON YouTube id list. It never stores room tokens or PINs and does not control whether shared playback controls are visible. | `tests/test_frontend_static.py::test_frontend_persists_only_allowlisted_local_storage_keys`. |
+| `localStorage` | `scene` | `frontend/src/storage.js` `readScene()` / `storeScene()`; `frontend/scenes.js` | Stores the client-local selected scene name. Allowed values are `sky`, `city`, `beach`, and `forest`. | `tests/test_frontend_static.py::test_frontend_persists_only_allowlisted_local_storage_keys`; `tests/e2e/test_scene_picker.py`. |
+| `localStorage` | `display-quality` | `frontend/src/storage.js` `readDisplayQuality()` / `storeDisplayQuality()` | Stores the client-local renderer quality choice (`auto`, `low`, `medium`, `high`, or `ultra`). | `tests/test_frontend_static.py::test_frontend_persists_only_allowlisted_local_storage_keys`. |
+| `localStorage` | `display-fx` | `frontend/src/storage.js` `readDisplayFX()` / `storeDisplayFX()` | Stores the client-local JSON overrides for supported visual effects. It is not synchronized through room state. | `tests/test_frontend_static.py::test_frontend_persists_only_allowlisted_local_storage_keys`. |
 
 ## Contract-To-Source/Test Map
 
@@ -119,4 +134,4 @@ Accepted client mutation message types are handled in `backend/state.py`: `time_
 - Preserve WebSocket close codes `1008` and `1011` and the first `{"type":"state"}` message.
 - Preserve Redis normalization and key/channel names, especially `aetheldesk:room:{ROOM_ID}:state`.
 - Preserve `BackendState` as the canonical event snapshot schema until a future task explicitly migrates it with tests.
-- Preserve frontend room token storage in `sessionStorage` under `room_token:{ROOM_ID}` and keep playlist/scene as the only `localStorage` contracts.
+- Preserve frontend room token storage in `sessionStorage` under `room_token:{ROOM_ID}`. The complete `localStorage` allowlist is `playlist`, `scene`, `display-quality`, and `display-fx`; room tokens and PINs must never be added there.

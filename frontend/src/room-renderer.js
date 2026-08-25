@@ -29,13 +29,22 @@ function updateTimerTitle(focus, remaining, isBreak, breakRemaining, paused) {
   }
 }
 
-export function createRoomRenderer({ sceneController }) {
+export function createRoomRenderer({ sceneController, container = document.body }) {
   let celestialPos = null;
   let cloudState = null;
   let cloudRAF = null;
+  let lastTimerAnnouncement = "";
 
   function prefersReducedMotion() {
     return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  }
+
+  function getStageSize() {
+    const rect = container.getBoundingClientRect();
+    return {
+      width: Math.max(1, rect.width || container.clientWidth || window.innerWidth),
+      height: Math.max(1, rect.height || container.clientHeight || window.innerHeight),
+    };
   }
 
   // With the 3D engine live, the legacy 2D star/cloud/satellite layers are
@@ -49,8 +58,7 @@ export function createRoomRenderer({ sceneController }) {
     document.body.style.setProperty("--sky-top", c.gradient[0]);
     document.body.style.setProperty("--sky-bot", c.gradient[1]);
 
-    const width = window.innerWidth;
-    const height = window.innerHeight;
+    const { width, height } = getStageSize();
     const rx = width * 0.42;
     const ry = height * 0.55;
     const cx = width / 2;
@@ -58,20 +66,27 @@ export function createRoomRenderer({ sceneController }) {
 
     byId("arc-path").setAttribute("d", `M ${cx - rx} ${cy} A ${rx} ${ry} 0 0 1 ${cx + rx} ${cy}`);
 
-    const angle = Math.PI - c.arc_pct * Math.PI;
-    const x = cx + rx * Math.cos(angle);
-    const y = cy - ry * Math.sin(angle);
+    const sunAngle = Math.PI - c.arc_pct * Math.PI;
+    const sunX = cx + rx * Math.cos(sunAngle);
+    const sunY = cy - ry * Math.sin(sunAngle);
+    const rawMoonArcPct = Number(c.night_arc_pct);
+    const moonArcPct = Number.isFinite(rawMoonArcPct) ? Math.max(0, Math.min(1, rawMoonArcPct)) : 0.5;
+    const moonAngle = Math.PI - moonArcPct * Math.PI;
+    const moonX = cx + rx * Math.cos(moonAngle);
+    const moonY = cy - ry * Math.sin(moonAngle);
 
     const sg = byId("sun-group");
     const mg = byId("moon-group");
-    sg.style.transform = `translate(${x}px,${y}px)`;
-    mg.style.transform = `translate(${x}px,${y}px)`;
+    sg.style.transform = `translate(${sunX}px,${sunY}px)`;
+    mg.style.transform = `translate(${moonX}px,${moonY}px)`;
 
-    celestialPos = { x, y };
-    byId("sat-group").style.transform = `translate(${x}px,${y}px)`;
+    celestialPos = c.phase === "day" ? { x: sunX, y: sunY } : { x: moonX, y: moonY };
+    byId("sat-group").style.transform = `translate(${celestialPos.x}px,${celestialPos.y}px)`;
 
     const elev = c.elevation;
-    sg.style.opacity = String(Math.max(0, Math.min(1, (elev + 6) / 8)));
+    const sunT = Math.max(0, Math.min(1, elev / 6));
+    const sunOpacity = sunT * sunT * (3 - 2 * sunT);
+    sg.style.opacity = String(sunOpacity);
     mg.style.opacity = String(Math.max(0, Math.min(1, (2 - elev) / 8)));
 
     document.body.classList.toggle("day", c.phase === "day");
@@ -81,8 +96,8 @@ export function createRoomRenderer({ sceneController }) {
       stars.style.opacity = c.phase === "night" ? "0.45" : "0";
       if (c.phase === "night" && !stars.dataset.drawn) drawStars(stars);
 
-      const sunF = Math.max(0, Math.min(1, (elev + 6) / 8));
-      byId("clouds").style.opacity = String(sunF * 0.35);
+      const cloudLight = Math.max(0, Math.min(1, (elev + 6) / 8));
+      byId("clouds").style.opacity = String(cloudLight * 0.35);
       initClouds();
     }
     sceneController.render(c);
@@ -90,8 +105,9 @@ export function createRoomRenderer({ sceneController }) {
 
   function drawStars(canvas) {
     canvas.dataset.drawn = "1";
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    const { width, height } = getStageSize();
+    canvas.width = Math.round(width);
+    canvas.height = Math.round(height);
     const ctx = canvas.getContext("2d");
     for (let i = 0; i < 180; i++) {
       ctx.beginPath();
@@ -105,8 +121,9 @@ export function createRoomRenderer({ sceneController }) {
   function initClouds() {
     if (cloudState) return;
     const canvas = byId("clouds");
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    const { width, height } = getStageSize();
+    canvas.width = Math.round(width);
+    canvas.height = Math.round(height);
     cloudState = Array.from({ length: 5 }, (_, i) => ({
       x: Math.random() * canvas.width,
       y: canvas.height * (0.06 + i * 0.055 + Math.random() * 0.03),
@@ -164,11 +181,22 @@ export function createRoomRenderer({ sceneController }) {
     const pauseBtn = byId("btn-pause-timer");
     const skipBreakBtn = byId("btn-skip-break");
     const timerStatus = byId("timer-status");
+    const idleDuration = byId("idle-duration");
+    const pomPhase = byId("pom-phase");
     const activeEl = document.activeElement;
     updateTimerTitle(focus, remaining, isBreak, breakRemaining, paused);
     document.body.classList.toggle("is-session", Boolean(focus || isBreak));
+    document.body.dataset.mode = focus ? (paused ? "paused" : "focus") : isBreak ? "break" : "idle";
+    if (idleDuration) idleDuration.textContent = fmtTime(remaining);
+    if (pomPhase) pomPhase.textContent = isBreak ? "휴식 중" : paused ? "집중 일시정지" : "집중 중";
     setHiddenInteraction(byId("time-dial"), Boolean(focus || isBreak));
     setHiddenInteraction(byId("hud-tl"), Boolean(focus || isBreak));
+
+    function announce(key, message) {
+      if (lastTimerAnnouncement === key) return;
+      lastTimerAnnouncement = key;
+      timerStatus.textContent = message;
+    }
 
     if (focus) {
       const shouldMoveFocus = activeEl === btn || activeEl === document.body || activeEl === document.documentElement || durChips.contains(activeEl);
@@ -185,7 +213,11 @@ export function createRoomRenderer({ sceneController }) {
       setHiddenInteraction(breakRow, true);
       setHiddenInteraction(focusRow, false);
       pauseBtn.textContent = paused ? "재개" : "일시정지";
-      timerStatus.textContent = paused ? "집중 타이머가 일시정지되었습니다." : `집중 중입니다. 남은 시간 ${fmtTime(remaining)}.`;
+      const minuteBucket = Math.ceil(remaining / 60);
+      announce(
+        paused ? `focus-paused-${remaining}` : `focus-${minuteBucket}`,
+        paused ? `집중 타이머가 일시정지되었습니다. 남은 시간 ${fmtTime(remaining)}.` : `집중 중입니다. 약 ${minuteBucket}분 남았습니다.`,
+      );
       if (shouldMoveFocus) setTimeout(() => pauseBtn.focus(), 120);
     } else if (isBreak) {
       const shouldMoveFocus = activeEl === btn || activeEl === document.body || activeEl === document.documentElement || durChips.contains(activeEl) || focusRow.contains(activeEl);
@@ -201,7 +233,8 @@ export function createRoomRenderer({ sceneController }) {
       focusRow.style.opacity = "0"; focusRow.style.pointerEvents = "none";
       setHiddenInteraction(breakRow, false);
       setHiddenInteraction(focusRow, true);
-      timerStatus.textContent = `휴식 중입니다. 남은 시간 ${fmtTime(breakRemaining)}.`;
+      const minuteBucket = Math.ceil(breakRemaining / 60);
+      announce(`break-${minuteBucket}`, `휴식 중입니다. 약 ${minuteBucket}분 남았습니다.`);
       if (shouldMoveFocus) setTimeout(() => skipBreakBtn.focus(), 120);
     } else {
       const shouldMoveFocus = pom.contains(activeEl);
@@ -217,7 +250,7 @@ export function createRoomRenderer({ sceneController }) {
       focusRow.style.opacity = "0"; focusRow.style.pointerEvents = "none";
       setHiddenInteraction(breakRow, true);
       setHiddenInteraction(focusRow, true);
-      timerStatus.textContent = "집중 타이머가 대기 중입니다.";
+      announce("idle", "집중 타이머가 대기 중입니다.");
       if (shouldMoveFocus) setTimeout(() => btn.focus(), 120);
     }
   }
@@ -228,7 +261,7 @@ export function createRoomRenderer({ sceneController }) {
     const active = state.focus
       ? { remain: state.pomodoro_remaining, total: state.pomodoro_duration }
       : state.break
-        ? { remain: state.break_remaining, total: state.break_duration }
+        ? { remain: state.break_remaining, total: state.sessions_done % 4 === 0 ? 1500 : 600 }
         : null;
     if (ring) {
       if (active && active.total > 0) {
@@ -260,7 +293,14 @@ export function createRoomRenderer({ sceneController }) {
     const el = byId("sessions");
     if (!el) return;
     el.textContent = "";
-    if (count === 0) return;
+    el.setAttribute("aria-label", count === 0 ? "완료한 집중 세션 없음" : `완료한 집중 세션 ${count}회`);
+    if (count === 0) {
+      const empty = document.createElement("span");
+      empty.className = "session-dot empty";
+      empty.setAttribute("aria-hidden", "true");
+      el.appendChild(empty);
+      return;
+    }
     const position = count % 4 || 4;
     for (let i = 0; i < 4; i++) {
       const dot = document.createElement("span");
