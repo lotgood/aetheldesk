@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 import re
 
 import pytest
@@ -25,8 +26,13 @@ VIEWPORT_MATRIX = (
     ({"width": 901, "height": 508}, 1),
     ({"width": 390, "height": 844}, 3),
     ({"width": 844, "height": 390}, 2),
+    ({"width": 568, "height": 320}, 2),
+    ({"width": 320, "height": 480}, 2),
     ({"width": 320, "height": 568}, 2),
 )
+
+
+EVIDENCE_DIR = Path(__file__).resolve().parents[2] / ".omo" / "evidence"
 
 
 @pytest.mark.e2e
@@ -360,6 +366,77 @@ def test_short_landscape_tools_keep_one_clear_bottom_lane(
     assert metrics["focusTop"] >= 54
     assert metrics["actionLeft"] >= -0.5
     assert metrics["actionRight"] <= viewport["width"] + 0.5
+    context.close()
+
+
+@pytest.mark.e2e
+@pytest.mark.parametrize(
+    "viewport",
+    (
+        {"width": 568, "height": 320},
+        {"width": 320, "height": 480},
+    ),
+)
+def test_ultra_compact_idle_hud_lanes_do_not_overlap(
+    browser: Browser,
+    live_server: str,
+    viewport: ViewportSize,
+) -> None:
+    context = browser.new_context(viewport=viewport, has_touch=True, is_mobile=True, reduced_motion="reduce")
+    page = context.new_page()
+    page.goto(f"{live_server}/", wait_until="domcontentloaded")
+    page.locator("#pin-input").fill("2468")
+    page.locator("#btn-start").click()
+    expect(page).to_have_url(re.compile(rf"{re.escape(live_server)}/room/[A-Z0-9]+"))
+    expect(page.locator("#conn-copy")).to_have_text("연결됨")
+
+    metrics = page.evaluate(
+        """
+        () => {
+          const rect = selector => document.querySelector(selector).getBoundingClientRect();
+          const overlap = (a, b) => {
+            const x = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+            const y = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+            return x * y;
+          };
+          const body = rect('body');
+          const center = rect('#center-cluster');
+          const focus = rect('#focus-btn');
+          const chips = rect('#dur-chips');
+          const dial = rect('#time-dial');
+          const controls = rect('#controls');
+          const action = rect('#action-bar');
+          const inBounds = value => value.left >= -0.5 && value.top >= -0.5
+            && value.right <= innerWidth + 0.5 && value.bottom <= innerHeight + 0.5;
+          return {
+            dialCenter: overlap(dial, center),
+            dialFocus: overlap(dial, focus),
+            controlsChips: overlap(controls, chips),
+            actionChips: overlap(action, chips),
+            circle: [focus.width, focus.height],
+            bounds: [inBounds(center), inBounds(focus), inBounds(chips), inBounds(dial), inBounds(action)],
+            stage: [body.left, body.top, body.width, body.height],
+            scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
+          };
+        }
+        """
+    )
+
+    assert metrics["dialCenter"] == 0
+    assert metrics["dialFocus"] == 0
+    assert metrics["controlsChips"] == 0
+    assert metrics["actionChips"] == 0
+    assert abs(metrics["circle"][0] - metrics["circle"][1]) <= 0.5
+    assert metrics["bounds"] == [True, True, True, True, True]
+    assert metrics["stage"] == pytest.approx([0, 0, viewport["width"], viewport["height"]], abs=0.5)
+    assert metrics["scroll"] == pytest.approx([viewport["width"], viewport["height"]], abs=0.5)
+
+    EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
+    screenshot = page.screenshot(
+        path=str(EVIDENCE_DIR / f"responsive-idle-{viewport['width']}x{viewport['height']}.png"),
+        full_page=False,
+    )
+    assert screenshot.startswith(b"\x89PNG\r\n\x1a\n")
     context.close()
 
 

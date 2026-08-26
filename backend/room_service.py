@@ -127,7 +127,7 @@ async def _token_authorizes_room(room_id: str, token: str) -> bool:
     return await _authorized_room_state(room_id, token) is not None
 
 
-async def _authorized_room_state(room_id: str, token: str) -> BackendState | None:
+async def _authorized_room_snapshot(room_id: str, token: str) -> tuple[BackendState, str] | None:
     runtime = _runtime()
     normalized = normalize_room_id(room_id)
     if runtime.room_store is not None:
@@ -136,18 +136,25 @@ async def _authorized_room_state(room_id: str, token: str) -> BackendState | Non
         if room_instance_id is None:
             return None
         token_hash = _scoped_token_hash(token, room_instance_id)
-        return await runtime.room_store.authorize_token(
+        state = await runtime.room_store.authorize_token(
             normalized,
             room_instance_id,
             token_hash,
         )
+        return None if state is None else (state, room_instance_id)
     room_instance_id = runtime.local_room_instance_ids.get(normalized)
     if room_instance_id is None:
         return None
     token_hash = _scoped_token_hash(token, room_instance_id)
     if token_hash not in runtime.local_token_hashes.get(normalized, set()):
         return None
-    return await get_room_state(normalized)
+    state = await get_room_state(normalized)
+    return None if state is None else (state, room_instance_id)
+
+
+async def _authorized_room_state(room_id: str, token: str) -> BackendState | None:
+    snapshot = await _authorized_room_snapshot(room_id, token)
+    return None if snapshot is None else snapshot[0]
 
 
 def make_state() -> BackendState:
@@ -225,10 +232,16 @@ async def save_room_state(room_id: str, state: BackendState) -> None:
         room["state"] = state
 
 
-async def mutate_room_state(room_id: str, msg: dict[str, object]) -> tuple[BackendState, bool] | None:
+async def mutate_room_state(
+    room_id: str,
+    msg: dict[str, object],
+    expected_instance_id: str,
+) -> tuple[BackendState, bool] | None:
     runtime = _runtime()
     normalized = normalize_room_id(room_id)
     if runtime.room_store is None:
+        if runtime.local_room_instance_ids.get(normalized) != expected_instance_id:
+            raise RoomGenerationChanged("room generation changed during websocket mutation")
         state = await get_room_state(normalized)
         if state is None:
             return None
@@ -241,9 +254,12 @@ async def mutate_room_state(room_id: str, msg: dict[str, object]) -> tuple[Backe
         return state, changed
 
     for _attempt in range(8):
-        state = await runtime.room_store.get_state(normalized)
-        if state is None:
-            return None
+        snapshot = await runtime.room_store.get_room_snapshot(normalized)
+        if snapshot is None:
+            raise RoomGenerationChanged("room generation is unavailable")
+        state, room_instance_id = snapshot
+        if room_instance_id != expected_instance_id:
+            raise RoomGenerationChanged("room generation changed during websocket mutation")
         expected_revision = state["revision"]
         current_slot = await runtime.room_store.current_time_slot()
         advancing = state["break"] or (state["focus"] and not state["paused"])
@@ -264,7 +280,12 @@ async def mutate_room_state(room_id: str, msg: dict[str, object]) -> tuple[Backe
         if not changed:
             return state, False
         state["revision"] = expected_revision + 1
-        if await runtime.room_store.compare_and_set_state(normalized, expected_revision, state):
+        if await runtime.room_store.compare_and_set_state(
+            normalized,
+            expected_revision,
+            expected_instance_id,
+            state,
+        ):
             return state, True
     raise StateConflict("room state changed too frequently")
 
@@ -280,7 +301,7 @@ def _build_event_bus() -> Any | None:
         redis,
         worker_id=runtime.worker_id,
         connections=runtime.connections,
-        load_canonical_state=runtime.room_store.get_state,
+        load_canonical_snapshot=runtime.room_store.get_room_snapshot,
     )
 
 
@@ -296,22 +317,70 @@ async def ensure_room_events(room_id: str) -> None:
         return
     normalized = normalize_room_id(room_id)
     task = runtime.event_subscription_tasks.get(normalized)
-    if task is not None and not task.done():
+    ready = runtime.event_subscription_ready.get(normalized)
+    created_subscription = False
+    if task is None or task.done() or ready is None:
+        ready = asyncio.get_running_loop().create_future()
+        task = asyncio.create_task(_run_room_event_subscription(normalized, ready))
+        runtime.event_subscription_tasks[normalized] = task
+        runtime.event_subscription_ready[normalized] = ready
+        created_subscription = True
+    await asyncio.shield(ready)
+    await asyncio.sleep(0)
+    if task.done():
+        exception = task.exception()
+        if exception is not None:
+            raise exception
+        raise RedisUnavailable("Redis event subscription ended")
+    if created_subscription:
+        await runtime.event_bus.sync_room_from_store(normalized)
+
+
+async def _run_room_event_subscription(room_id: str, ready: asyncio.Future[None]) -> None:
+    runtime = _runtime()
+    current_task = asyncio.current_task()
+    try:
+        await runtime.event_bus.consume_room_events(room_id, ready)
+        raise RedisUnavailable("Redis event subscription ended")
+    except asyncio.CancelledError:
+        if not ready.done():
+            ready.cancel()
+        raise
+    except Exception as exc:
+        normalized_exc = (
+            exc if isinstance(exc, RedisUnavailable) else RedisUnavailable("Redis event subscription failed")
+        )
+        if not ready.done():
+            ready.set_exception(normalized_exc)
+        else:
+            runtime.logger.warning("room event subscription failed for %s", room_id, exc_info=exc)
+            for websocket in runtime.connections.connections_for(room_id):
+                try:
+                    await websocket.close(
+                        code=runtime.WS_OPERATIONAL_CLOSE_CODE,
+                        reason=runtime.WS_OPERATIONAL_CLOSE_REASON,
+                    )
+                except (RuntimeError, WebSocketDisconnect):
+                    pass
         return
-    await runtime.event_bus.sync_room_from_store(normalized)
-    runtime.event_subscription_tasks[normalized] = asyncio.create_task(
-        runtime.event_bus.consume_room_events(normalized)
-    )
+    finally:
+        if runtime.event_subscription_tasks.get(room_id) is current_task:
+            runtime.event_subscription_tasks.pop(room_id, None)
+        if runtime.event_subscription_ready.get(room_id) is ready:
+            runtime.event_subscription_ready.pop(room_id, None)
 
 
 async def stop_room_events(room_id: str) -> None:
     runtime = _runtime()
     normalized = normalize_room_id(room_id)
     task = runtime.event_subscription_tasks.pop(normalized, None)
+    ready = runtime.event_subscription_ready.pop(normalized, None)
+    if ready is not None and not ready.done():
+        ready.cancel()
     if task is None:
         return
     _ = task.cancel()
-    with suppress(asyncio.CancelledError):
+    with suppress(asyncio.CancelledError, RedisUnavailable):
         await task
 
 
@@ -338,6 +407,10 @@ async def stop_event_subscriptions() -> None:
     for subscription in tuple(runtime.event_subscription_tasks.values()):
         _ = subscription.cancel()
     for subscription in tuple(runtime.event_subscription_tasks.values()):
-        with suppress(asyncio.CancelledError):
+        with suppress(asyncio.CancelledError, RedisUnavailable):
             await subscription
     runtime.event_subscription_tasks.clear()
+    for ready in tuple(runtime.event_subscription_ready.values()):
+        if not ready.done():
+            ready.cancel()
+    runtime.event_subscription_ready.clear()

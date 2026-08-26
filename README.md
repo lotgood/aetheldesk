@@ -58,7 +58,7 @@ See [`docs/architecture/contracts.md`](docs/architecture/contracts.md) for the r
 | 50+10 focus cycle | Starts at 50 minutes by default and follows every normal completion with the same fixed 10-minute break. |
 | Completion ritual | A monotonic reward lights one Aethel Astrarium node, then offers optional recovery and next-intent choices without stopping the shared timer. |
 | Three environments | Switch between the unified coastal sky, city, and forest; the retired standalone beach preference migrates to the coast. |
-| Touch-friendly controls | Desktop controls auto-hide after idle; touch devices keep controls available. |
+| Touch-friendly controls | During focus and recovery, surrounding controls recede gently and return to full contrast on pointer or keyboard interaction. |
 | Korean-primary UI | Interactive copy and status text use Korean-first wording while keeping `AethelDesk`, `PIN`, storage keys, and API fields stable. |
 
 ## Command Matrix
@@ -132,7 +132,7 @@ npm run build
 
 `npm run build` first compiles the local Tailwind stylesheet (`npm run build:css` → `frontend/tailwind.css`) and then runs Vite. The build writes to `frontend/dist`. FastAPI serves hashed assets from `frontend/dist/assets` when present. Do not commit generated `frontend/dist` unless a release process explicitly asks for it.
 
-The frontend is fully self-contained: Tailwind is compiled locally and the Inter/Instrument Serif fonts are self-hosted under `frontend/fonts/` (via `frontend/fonts.css`). The current focus room has no YouTube, playlist, scene-audio, or other external media request, so it works offline after its own assets load.
+The frontend is fully self-contained: Tailwind is compiled locally and the Inter/Instrument Serif fonts are self-hosted under `frontend/fonts/` (via `frontend/fonts.css`). The current focus room has no YouTube, playlist, scene-audio, or third-party runtime request, so it can run on a private LAN with its FastAPI and Redis server.
 
 ## Docker Self-Host Setup
 
@@ -156,7 +156,7 @@ curl -fsS http://127.0.0.1:${APP_PORT:-8000}/health
 docker compose exec redis redis-cli CONFIG GET appendonly appendfsync
 ```
 
-Task 11 hardening now builds frontend assets in Docker with `npm ci`, runs the final Python app as a non-root `appuser`, persists Redis in the `redis-data` volume, and checks Redis health with `PING`, `appendonly yes`, and `appendfsync everysec`. Redis config lives in `docker/redis/redis.conf`.
+The Docker image builds frontend assets with `npm ci`, runs the final Python app as a non-root `appuser`, persists Redis in the `redis-data` volume, and checks Redis health with `PING`, `appendonly yes`, and `appendfsync everysec`. Redis config lives in `docker/redis/redis.conf`.
 
 Required and useful environment variables:
 
@@ -205,7 +205,7 @@ For delegated tasks, save concise command output or summaries under `.omo/eviden
 
 AethelDesk is now a Vite + vanilla ES module frontend with a FastAPI backend. React, Vue, Svelte, TypeScript, Webpack, SQL/accounts/analytics, Redis Streams, Celery, Kubernetes, TLS automation, and reverse-proxy config remain out of scope unless separately approved.
 
-Redis remains mandatory for Docker/prod and cross-worker behavior. The in-memory fallback is only for tests and local no-Redis development.
+Redis remains mandatory outside explicit test mode and for all cross-worker behavior. The in-memory path is restricted to pytest or `AETHELDESK_ENV=test`.
 
 Korean-primary copy is the UI policy. Interactive controls, validation errors, live regions, and connection or location status should use Korean-first wording. Keep the brand name `AethelDesk`, the security acronym `PIN`, storage keys, API fields, and route names stable. See [`docs/ux/audit.md`](docs/ux/audit.md) for the current UX contract and historical audit.
 
@@ -270,7 +270,7 @@ Without these settings, room sync can fail or disconnect unexpectedly.
 | Timer controls | Pause, resume, cancel, or skip the fixed 10-minute break; none of these actions mints an extra reward. |
 | Rest ritual | Optional recovery and next-intent choices guide the break without changing the authoritative timer. |
 | Scene picker | Switches among the unified coastal sky, city, and forest. |
-| Idle desktop UI | Controls fade after 3 seconds of mouse inactivity. |
+| Focus-session UI | Surrounding controls dim during focus or recovery and return to full contrast when hovered or keyboard-focused. |
 
 ## Troubleshooting
 

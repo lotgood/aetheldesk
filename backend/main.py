@@ -75,6 +75,7 @@ connections = LocalConnectionManager()
 room_store: object | None = None
 event_bus: object | None = None
 event_subscription_tasks: dict[str, asyncio.Task[None]] = {}
+event_subscription_ready: dict[str, asyncio.Future[None]] = {}
 local_pin_hashes: dict[str, str] = {}
 local_token_hashes: dict[str, set[str]] = {}
 local_room_instance_ids: dict[str, str] = {}

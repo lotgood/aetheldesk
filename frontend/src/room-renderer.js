@@ -343,10 +343,14 @@ export function startClock() {
 }
 
 export function playChime() {
+  let ctx;
   try {
     const AudioContextCtor = window.AudioContext || window["webkit" + "AudioContext"];
-    const ctx = new AudioContextCtor();
-    [[528, 0], [396, 0.3], [528, 0.7]].forEach(([freq, when]) => {
+    if (!AudioContextCtor) return;
+    ctx = new AudioContextCtor();
+    const notes = [[528, 0], [396, 0.3], [528, 0.7]];
+    let remaining = notes.length;
+    notes.forEach(([freq, when]) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
@@ -355,8 +359,14 @@ export function playChime() {
       osc.frequency.value = freq;
       gain.gain.setValueAtTime(0.18, ctx.currentTime + when);
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + when + 1.2);
+      osc.addEventListener("ended", () => {
+        remaining -= 1;
+        if (remaining === 0) void ctx.close();
+      }, { once: true });
       osc.start(ctx.currentTime + when);
       osc.stop(ctx.currentTime + when + 1.2);
     });
-  } catch (_) {}
+  } catch (_) {
+    void ctx?.close?.();
+  }
 }

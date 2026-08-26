@@ -1219,6 +1219,50 @@ body.panel-open #time-dial { opacity: 0 !important; pointer-events: none !import
   #action-bar { width: 19rem; }
 }
 
+/* The smallest real browser landscape (568x320 after Chrome's toolbar) has
+   only three usable horizontal lanes. Lift the focus ritual just enough for
+   its duration selector to clear the dock, then trim the celestial instrument
+   so it remains wholly in the left utility lane. Safe-area space shifts the
+   centre ritual away from a landscape notch without changing its circle. */
+@container room-stage (min-width: 521px) and (max-width: 600px) and (max-height: 360px) {
+  #center-cluster {
+    margin-top: -3.45rem;
+    transform: translateX(var(--safe-left));
+  }
+
+  #time-dial > .liquid-glass { width: 12rem; }
+  #time-slider { width: 4.25rem !important; }
+}
+
+/* On a 320x480 browser the centre, sky instrument and dock must form three
+   vertical lanes. The room clock yields because the dial already carries the
+   same time, while a top safe inset gently offsets the ritual from the room
+   chip instead of squeezing or distorting the focus circle. */
+@container room-stage (max-width: 360px) and (max-height: 520px) and (orientation: portrait) {
+  #hud-tr { display: none; }
+
+  #center-cluster {
+    position: absolute;
+    top: max(4rem, calc(var(--safe-top) + .5rem));
+    right: 0;
+    left: 0;
+    width: max-content;
+    margin-top: 0;
+    margin-inline: auto;
+    transform: none;
+  }
+
+  .focus-btn { --focus-diameter: 9rem; }
+
+  #time-dial {
+    top: auto !important;
+    right: auto !important;
+    bottom: calc(var(--safe-bottom) + 5.75rem) !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+  }
+}
+
 @media (pointer: coarse), (max-width: 900px), (orientation: landscape) and (max-height: 480px) {
   .copy-room,
   #btn-reset-time {

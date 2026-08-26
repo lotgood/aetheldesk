@@ -1,12 +1,17 @@
 import asyncio
 import importlib
 import json
+import logging
+from types import SimpleNamespace
 from typing import Any, cast
 
+import pytest
 from fastapi import WebSocket
 
 from backend.connection_manager import LocalConnectionManager
 from backend.redis_contract import make_event_envelope, room_events_channel
+from backend.room_store import RedisUnavailable
+from backend import room_service
 from backend.state import BackendState, make_state
 
 event_bus_module = importlib.import_module("backend.event_bus")
@@ -51,6 +56,29 @@ class FakeRedis:
 
     def pubsub(self) -> FakePubSub:
         return self.pubsub_instance
+
+
+class ControlledPubSub(FakePubSub):
+    def __init__(self) -> None:
+        super().__init__([])
+        self.subscribe_started = asyncio.Event()
+        self.allow_subscribe = asyncio.Event()
+        self.keep_listening = asyncio.Event()
+
+    async def subscribe(self, *channels: str) -> bool:
+        self.subscribe_started.set()
+        await self.allow_subscribe.wait()
+        return await super().subscribe(*channels)
+
+    async def listen(self):
+        await self.keep_listening.wait()
+        if False:
+            yield {}
+
+
+class FailingPublishRedis(FakeRedis):
+    async def publish(self, channel: str, message: str) -> int:
+        raise ConnectionError("redis down")
 
 
 def sample_state(*, remaining: int = 42, marker: str = "celestial") -> BackendState:
@@ -162,6 +190,87 @@ def test_consume_room_events_subscribes_and_dispatches_messages():
     assert decoded_messages(websocket) == [{"type": "state", "data": state}]
 
 
+def test_consumer_ready_future_waits_for_subscribe_ack_and_closes_cleanly():
+    redis = FakeRedis()
+    controlled = ControlledPubSub()
+    redis.pubsub_instance = controlled
+    bus = RedisStateEventBus(redis, worker_id="worker-a", connections=LocalConnectionManager())
+
+    async def run() -> None:
+        ready = asyncio.get_running_loop().create_future()
+        task = asyncio.create_task(bus.consume_room_events("room-a", ready))
+        await controlled.subscribe_started.wait()
+        assert ready.done() is False
+        controlled.allow_subscribe.set()
+        await ready
+        assert controlled.subscribed == [room_events_channel("ROOM-A")]
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run())
+    assert controlled.closed is True
+
+
+def test_ensure_room_events_does_not_sync_or_return_before_subscription_ready(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    class ControlledBus:
+        def __init__(self) -> None:
+            self.subscribe_started = asyncio.Event()
+            self.allow_subscribe = asyncio.Event()
+            self.keep_listening = asyncio.Event()
+            self.order: list[str] = []
+
+        async def consume_room_events(self, _room_id: str, ready: asyncio.Future[None]) -> None:
+            self.subscribe_started.set()
+            await self.allow_subscribe.wait()
+            self.order.append("subscribed")
+            ready.set_result(None)
+            await self.keep_listening.wait()
+
+        async def sync_room_from_store(self, _room_id: str) -> bool:
+            self.order.append("sync")
+            return True
+
+    async def run() -> None:
+        bus = ControlledBus()
+        runtime = SimpleNamespace(
+            event_bus=bus,
+            event_subscription_tasks={},
+            event_subscription_ready={},
+            logger=logging.getLogger("test.event-bus"),
+            connections=LocalConnectionManager(),
+            WS_OPERATIONAL_CLOSE_CODE=1011,
+            WS_OPERATIONAL_CLOSE_REASON="service unavailable",
+        )
+        monkeypatch.setattr(room_service, "_runtime", lambda: runtime)
+        ensure_task = asyncio.create_task(room_service.ensure_room_events("room-a"))
+        await bus.subscribe_started.wait()
+        await asyncio.sleep(0)
+        assert ensure_task.done() is False
+        assert bus.order == []
+        bus.allow_subscribe.set()
+        await ensure_task
+        assert bus.order == ["subscribed", "sync"]
+        await room_service.ensure_room_events("room-a")
+        assert bus.order == ["subscribed", "sync"]
+        await room_service.stop_room_events("room-a")
+
+    asyncio.run(run())
+
+
+def test_publish_connection_error_is_normalized_to_redis_unavailable():
+    bus = RedisStateEventBus(
+        FailingPublishRedis(),
+        worker_id="worker-a",
+        connections=LocalConnectionManager(),
+    )
+
+    with pytest.raises(RedisUnavailable):
+        asyncio.run(bus.publish_state("room-a", sample_state()))
+
+
 def test_canonical_state_load_repairs_missed_pubsub_before_fanout():
     stale_state = sample_state(remaining=99)
     canonical_state = sample_state(remaining=7, marker="canonical")
@@ -190,10 +299,33 @@ def test_canonical_state_load_repairs_missed_pubsub_before_fanout():
 
     assert asyncio.run(run()) == (True, True)
     assert loads == ["ROOM-A", "ROOM-A"]
-    assert decoded_messages(websocket) == [
-        {"type": "state", "data": canonical_state},
-        {"type": "state", "data": canonical_state},
-    ]
+    assert decoded_messages(websocket) == [{"type": "state", "data": canonical_state}]
+
+
+def test_canonical_snapshot_fans_out_only_to_matching_room_generation():
+    state = sample_state(remaining=5, marker="new-generation")
+
+    async def load_snapshot(_room_id: str) -> tuple[BackendState, str] | None:
+        return state, "new-generation"
+
+    redis = FakeRedis()
+    manager = LocalConnectionManager()
+    old_socket = DummyWebSocket()
+    new_socket = DummyWebSocket()
+    manager.connect("room-a", cast(WebSocket, old_socket), "old-generation")
+    manager.connect("room-a", cast(WebSocket, new_socket), "new-generation")
+    bus = RedisStateEventBus(
+        redis,
+        worker_id="worker-a",
+        connections=manager,
+        load_canonical_snapshot=load_snapshot,
+    )
+    envelope = event_payload("room-a", "worker-b", "evt-new-generation", state)
+
+    assert asyncio.run(bus.dispatch_envelope(envelope)) is True
+    assert decoded_messages(old_socket) == []
+    assert decoded_messages(new_socket) == [{"type": "state", "data": state}]
+    assert manager.connections_for("room-a") == frozenset({cast(WebSocket, new_socket)})
 
 
 def test_delta_payload_is_not_accepted_as_state_source():

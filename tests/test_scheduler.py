@@ -15,7 +15,7 @@ from backend.redis_contract import (
     room_tick_lock_key,
     room_token_index_key,
 )
-from backend.room_store import RedisUnavailable, RoomStore
+from backend.room_store import RedisUnavailable, RoomGenerationChanged, RoomStore
 from backend.state import BackendState, make_state
 
 scheduler_module = importlib.import_module("backend.scheduler")
@@ -98,12 +98,13 @@ class FakeRedis:
         return next_value
 
     async def eval(self, _script: str, _numkeys: int, *keys_and_args: object) -> object:
-        if _numkeys == 4 and "AETHEL_CREATE_ROOM" in _script:
+        if _numkeys == 5 and "AETHEL_CREATE_ROOM" in _script:
             (
                 index_key,
                 state_key,
                 metadata_key,
                 token_index_key,
+                tick_lock_key,
                 room_id,
                 encoded_state,
                 encoded_metadata,
@@ -117,13 +118,25 @@ class FakeRedis:
             if len(rooms) >= int(max_rooms):
                 return -2
             self.sets.pop(token_index_key, None)
+            self.values.pop(tick_lock_key, None)
+            self.ttls.pop(tick_lock_key, None)
             self.values[state_key] = encoded_state
             self.values[metadata_key] = encoded_metadata
             self.ttls[state_key] = int(ttl)
             self.ttls[metadata_key] = int(ttl)
             rooms.add(room_id)
             return 1
-        if _numkeys == 3 and "EXPIRE" in _script:
+        if _numkeys == 2 and "AETHEL_GET_ROOM_SNAPSHOT" in _script:
+            state_key, metadata_key = (str(value) for value in keys_and_args)
+            encoded_state = self.values.get(state_key)
+            encoded_metadata = self.values.get(metadata_key)
+            if encoded_state is None or encoded_metadata is None:
+                return None
+            room_instance_id = json.loads(encoded_metadata).get("room_instance_id")
+            if not isinstance(room_instance_id, str) or not room_instance_id:
+                return None
+            return [encoded_state, room_instance_id]
+        if _numkeys == 3 and "AETHEL_REFRESH_ROOM_TTL" in _script:
             state_key, metadata_key, token_index_key, ttl = (str(value) for value in keys_and_args)
             if state_key not in self.values or metadata_key not in self.values:
                 return 0
@@ -132,13 +145,28 @@ class FakeRedis:
             if token_index_key in self.sets:
                 self.ttls[token_index_key] = int(ttl)
             return 1
-        if _numkeys == 2:
-            key, state_key, lease, expected_revision, encoded_state, state_ttl, lock_ttl = (
-                str(value) for value in keys_and_args
-            )
+        if _numkeys == 4 and "AETHEL_COMMIT_TICK_STATE" in _script:
+            (
+                key,
+                state_key,
+                metadata_key,
+                token_index_key,
+                lease,
+                expected_revision,
+                expected_instance_id,
+                encoded_state,
+                state_ttl,
+                lock_ttl,
+            ) = (str(value) for value in keys_and_args)
             if self.values.get(key) != lease:
                 return 0
-            current_state = json.loads(self.values[state_key])
+            current_encoded_state = self.values.get(state_key)
+            encoded_metadata = self.values.get(metadata_key)
+            if current_encoded_state is None or encoded_metadata is None:
+                return -1
+            if json.loads(encoded_metadata).get("room_instance_id") != expected_instance_id:
+                return -1
+            current_state = json.loads(current_encoded_state)
             if int(current_state.get("revision", 0)) != int(expected_revision):
                 return 0
             slot, status, *_rest = lease.split("|")
@@ -146,19 +174,36 @@ class FakeRedis:
                 return 0
             self.values[state_key] = encoded_state
             self.ttls[state_key] = int(state_ttl)
+            self.ttls[metadata_key] = int(state_ttl)
+            if token_index_key in self.sets:
+                self.ttls[token_index_key] = int(state_ttl)
             self.values[key] = f"{slot}|done"
             self.ttls[key] = int(lock_ttl)
             return 1
 
-        if _numkeys == 1 and "cjson.decode" in _script:
-            state_key, expected_revision, encoded_state, state_ttl = (str(value) for value in keys_and_args)
+        if _numkeys == 3 and "AETHEL_COMPARE_AND_SET_STATE" in _script:
+            (
+                state_key,
+                metadata_key,
+                token_index_key,
+                expected_revision,
+                expected_instance_id,
+                encoded_state,
+                state_ttl,
+            ) = (str(value) for value in keys_and_args)
             current_state = self.values.get(state_key)
-            if current_state is None:
-                return 0
+            encoded_metadata = self.values.get(metadata_key)
+            if current_state is None or encoded_metadata is None:
+                return -1
+            if json.loads(encoded_metadata).get("room_instance_id") != expected_instance_id:
+                return -1
             if int(json.loads(current_state).get("revision", 0)) != int(expected_revision):
                 return 0
             self.values[state_key] = encoded_state
             self.ttls[state_key] = int(state_ttl)
+            self.ttls[metadata_key] = int(state_ttl)
+            if token_index_key in self.sets:
+                self.ttls[token_index_key] = int(state_ttl)
             return 1
 
         if _numkeys == 1 and "SCARD" in _script:
@@ -232,8 +277,8 @@ def test_two_workers_run_scheduler_but_tick_lock_allows_one_decrement():
     manager_b = LocalConnectionManager()
     socket_a = DummyWebSocket()
     socket_b = DummyWebSocket()
-    manager_a.connect("room-a", cast(WebSocket, socket_a))
-    manager_b.connect("room-a", cast(WebSocket, socket_b))
+    manager_a.connect("room-a", cast(WebSocket, socket_a), "instance-a")
+    manager_b.connect("room-a", cast(WebSocket, socket_b), "instance-a")
     publisher_a = RecordingPublisher()
     publisher_b = RecordingPublisher()
     scheduler_a = RoomTickScheduler(
@@ -254,7 +299,11 @@ def test_two_workers_run_scheduler_but_tick_lock_allows_one_decrement():
     )
 
     async def run() -> BackendState:
-        await store.set_state("room-a", sample_state(remaining=10))
+        await store.create_room(
+            "room-a",
+            sample_state(remaining=10),
+            metadata={"room_id": "ROOM-A", "room_instance_id": "instance-a"},
+        )
         await scheduler_a.tick_once(counter=1)
         await scheduler_b.tick_once(counter=1)
         loaded = await store.get_state("room-a")
@@ -277,8 +326,8 @@ def test_completed_tick_lease_allows_the_next_second_without_double_decrement():
     store = RoomStore(redis)
     manager_a = LocalConnectionManager()
     manager_b = LocalConnectionManager()
-    manager_a.connect("room-a", cast(WebSocket, DummyWebSocket()))
-    manager_b.connect("room-a", cast(WebSocket, DummyWebSocket()))
+    manager_a.connect("room-a", cast(WebSocket, DummyWebSocket()), "instance-a")
+    manager_b.connect("room-a", cast(WebSocket, DummyWebSocket()), "instance-a")
     scheduler_a = RoomTickScheduler(
         store,
         connections=manager_a,
@@ -295,7 +344,11 @@ def test_completed_tick_lease_allows_the_next_second_without_double_decrement():
     )
 
     async def run() -> BackendState:
-        await store.set_state("room-a", sample_state(remaining=10))
+        await store.create_room(
+            "room-a",
+            sample_state(remaining=10),
+            metadata={"room_id": "ROOM-A", "room_instance_id": "instance-a"},
+        )
         await scheduler_a.tick_once(counter=1)
         await scheduler_b.tick_once(counter=1)
         redis.advance()
@@ -316,7 +369,7 @@ def test_running_previous_tick_blocks_overlap_until_lease_expires():
     redis = FakeRedis()
     store = RoomStore(redis)
     manager = LocalConnectionManager()
-    manager.connect("room-a", cast(WebSocket, DummyWebSocket()))
+    manager.connect("room-a", cast(WebSocket, DummyWebSocket()), "instance-a")
     scheduler = RoomTickScheduler(
         store,
         connections=manager,
@@ -326,7 +379,11 @@ def test_running_previous_tick_blocks_overlap_until_lease_expires():
     )
 
     async def run() -> tuple[bool, bool, BackendState]:
-        await store.set_state("room-a", sample_state(remaining=10))
+        await store.create_room(
+            "room-a",
+            sample_state(remaining=10),
+            metadata={"room_id": "ROOM-A", "room_instance_id": "instance-a"},
+        )
         lock_key = room_tick_lock_key("ROOM-A")
         redis.values[lock_key] = "1|running|worker-a|stalled"
         redis.ttls[lock_key] = 2
@@ -368,10 +425,10 @@ def test_expired_tick_lease_cannot_overwrite_newer_timer_state():
         assert fast_state is not None
         fast_state["pomodoro_remaining"] = 1
         fast_state["revision"] = 1
-        assert await store.commit_tick_state("room-a", fast_lease[1], 0, fast_state, 2) is True
+        assert await store.commit_tick_state("room-a", fast_lease[1], 0, "instance-a", fast_state, 2) is True
 
         stale_state["revision"] = 1
-        stale_committed = await store.commit_tick_state("room-a", stale_lease[1], 0, stale_state, 2)
+        stale_committed = await store.commit_tick_state("room-a", stale_lease[1], 0, "instance-a", stale_state, 2)
         loaded = await store.get_state("room-a")
         assert loaded is not None
         return stale_committed, loaded
@@ -404,12 +461,13 @@ def test_websocket_cancel_revision_cannot_be_resurrected_by_inflight_tick():
         cancelled["focus"] = False
         cancelled["pomodoro_remaining"] = cancelled["pomodoro_duration"]
         cancelled["revision"] = 1
-        assert await store.compare_and_set_state("room-a", 0, cancelled) is True
+        assert await store.compare_and_set_state("room-a", 0, "instance-a", cancelled) is True
 
         tick_committed = await store.commit_tick_state(
             "room-a",
             tick_lease[1],
             0,
+            "instance-a",
             stale_tick_state,
             2,
         )
@@ -425,12 +483,58 @@ def test_websocket_cancel_revision_cannot_be_resurrected_by_inflight_tick():
     assert state["revision"] == 1
 
 
+def test_old_generation_tick_cannot_overwrite_recreated_room_with_same_revision():
+    redis = FakeRedis()
+    store = RoomStore(redis, ttl_seconds=300)
+
+    async def run() -> BackendState:
+        await store.create_room(
+            "room-a",
+            sample_state(remaining=10),
+            metadata={"room_id": "ROOM-A", "room_instance_id": "old-generation"},
+        )
+        old_lease = await store.acquire_tick_lock("room-a", "old-worker", ttl_seconds=2)
+        old_snapshot = await store.get_room_snapshot("room-a")
+        assert old_lease is not None
+        assert old_snapshot is not None
+        old_state, old_instance_id = old_snapshot
+        old_state["pomodoro_remaining"] = 9
+        old_state["revision"] = 1
+
+        assert await store.expire_empty_room("room-a", has_connections=False) is True
+        await store.create_room(
+            "room-a",
+            sample_state(remaining=10),
+            metadata={"room_id": "ROOM-A", "room_instance_id": "new-generation"},
+        )
+        redis.values[room_tick_lock_key("ROOM-A")] = old_lease[1]
+        redis.ttls[room_tick_lock_key("ROOM-A")] = 2
+
+        with pytest.raises(RoomGenerationChanged):
+            await store.commit_tick_state(
+                "room-a",
+                old_lease[1],
+                0,
+                old_instance_id,
+                old_state,
+                2,
+            )
+        current = await store.get_state("room-a")
+        assert current is not None
+        return current
+
+    state = asyncio.run(run())
+
+    assert state["pomodoro_remaining"] == 10
+    assert state["revision"] == 0
+
+
 def test_celestial_refresh_is_skipped_until_worker_gets_tick_lock():
     redis = FakeRedis()
     store = RoomStore(redis)
     manager = LocalConnectionManager()
     websocket = DummyWebSocket()
-    manager.connect("room-a", cast(WebSocket, websocket))
+    manager.connect("room-a", cast(WebSocket, websocket), "instance-a")
     called = {"count": 0}
 
     def celestial_provider() -> dict[str, object]:
@@ -447,7 +551,11 @@ def test_celestial_refresh_is_skipped_until_worker_gets_tick_lock():
 
     async def run() -> tuple[bool, bool, BackendState]:
         state = sample_state(focus=False, remaining=10)
-        await store.set_state("room-a", state)
+        await store.create_room(
+            "room-a",
+            state,
+            metadata={"room_id": "ROOM-A", "room_instance_id": "instance-a"},
+        )
         redis.now_seconds = 30
         redis.values[room_tick_lock_key("ROOM-A")] = "30|running|other-worker|stalled"
         blocked = await scheduler.tick_room("room-a", counter=30)
@@ -476,8 +584,8 @@ def test_two_workers_complete_accelerated_50_plus_10_cycle_and_keep_credentials_
     manager_b = LocalConnectionManager()
     socket_a = DummyWebSocket()
     socket_b = DummyWebSocket()
-    manager_a.connect("room-a", cast(WebSocket, socket_a))
-    manager_b.connect("room-a", cast(WebSocket, socket_b))
+    manager_a.connect("room-a", cast(WebSocket, socket_a), "instance-a")
+    manager_b.connect("room-a", cast(WebSocket, socket_b), "instance-a")
     scheduler_a = RoomTickScheduler(
         store,
         connections=manager_a,
@@ -562,7 +670,7 @@ def test_timer_catches_up_elapsed_redis_seconds_after_scheduler_gap():
     redis = FakeRedis()
     store = RoomStore(redis, ttl_seconds=300)
     manager = LocalConnectionManager()
-    manager.connect("room-a", cast(WebSocket, DummyWebSocket()))
+    manager.connect("room-a", cast(WebSocket, DummyWebSocket()), "instance-a")
     scheduler = RoomTickScheduler(
         store,
         connections=manager,
@@ -595,7 +703,7 @@ def test_same_redis_slot_after_message_reconciliation_does_not_double_decrement(
     redis = FakeRedis()
     store = RoomStore(redis, ttl_seconds=300)
     manager = LocalConnectionManager()
-    manager.connect("room-a", cast(WebSocket, DummyWebSocket()))
+    manager.connect("room-a", cast(WebSocket, DummyWebSocket()), "instance-a")
     scheduler = RoomTickScheduler(
         store,
         connections=manager,
@@ -629,7 +737,7 @@ def test_elapsed_gap_crosses_focus_completion_and_consumes_break_time_once():
     redis = FakeRedis()
     store = RoomStore(redis, ttl_seconds=300)
     manager = LocalConnectionManager()
-    manager.connect("room-a", cast(WebSocket, DummyWebSocket()))
+    manager.connect("room-a", cast(WebSocket, DummyWebSocket()), "instance-a")
     scheduler = RoomTickScheduler(
         store,
         connections=manager,
@@ -705,7 +813,7 @@ def test_connected_idle_room_refreshes_ttl_and_celestial_state():
     redis = FakeRedis()
     store = RoomStore(redis, ttl_seconds=3)
     manager = LocalConnectionManager()
-    manager.connect("room-a", cast(WebSocket, DummyWebSocket()))
+    manager.connect("room-a", cast(WebSocket, DummyWebSocket()), "instance-a")
     called = {"count": 0}
 
     def celestial_provider() -> dict[str, object]:

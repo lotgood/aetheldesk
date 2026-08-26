@@ -5,7 +5,7 @@ from typing import Protocol
 
 from backend import config
 from backend.connection_manager import LocalConnectionManager
-from backend.room_store import RedisUnavailable
+from backend.room_store import RedisUnavailable, RoomGenerationChanged
 from backend.state import BackendState, advance_timer_state
 
 
@@ -15,6 +15,7 @@ logger = logging.getLogger("aetheldesk.scheduler")
 class RoomStoreLike(Protocol):
     async def room_ids(self) -> tuple[str, ...]: ...
     async def get_state(self, room_id: str) -> BackendState | None: ...
+    async def get_room_snapshot(self, room_id: str) -> tuple[BackendState, str] | None: ...
     async def set_state(self, room_id: str, state: BackendState) -> None: ...
     async def refresh_ttl(self, room_id: str) -> bool: ...
     async def acquire_tick_lock(self, room_id: str, owner: str, ttl_seconds: int) -> tuple[int, str] | None: ...
@@ -24,6 +25,7 @@ class RoomStoreLike(Protocol):
         room_id: str,
         lease: str,
         expected_revision: int,
+        expected_instance_id: str,
         state: BackendState,
         lock_seconds: int,
     ) -> bool: ...
@@ -68,14 +70,17 @@ class RoomTickScheduler:
                 raise
             except RedisUnavailable:
                 raise
+            except RoomGenerationChanged:
+                continue
             except Exception:
                 logger.exception("timer tick failed for room %s", room_id)
 
     async def tick_room(self, room_id: str, *, counter: int) -> bool:
-        preliminary_state = await self.store.get_state(room_id)
-        if preliminary_state is None:
+        preliminary_snapshot = await self.store.get_room_snapshot(room_id)
+        if preliminary_snapshot is None:
             return False
-        connected = self.connections.has_connections(room_id)
+        preliminary_state, room_instance_id = preliminary_snapshot
+        connected = self.connections.has_connections(room_id, room_instance_id)
         advancing = preliminary_state["break"] or (preliminary_state["focus"] and not preliminary_state["paused"])
         if not connected and not advancing:
             # Only a worker with a local browser should contend for an idle or
@@ -92,12 +97,13 @@ class RoomTickScheduler:
         needs_broadcast = False
         lease_completed = False
         try:
-            state = await self.store.get_state(room_id)
-            if state is None:
+            snapshot = await self.store.get_room_snapshot(room_id)
+            if snapshot is None:
                 return False
+            state, room_instance_id = snapshot
 
             expected_revision = state["revision"]
-            connected = self.connections.has_connections(room_id)
+            connected = self.connections.has_connections(room_id, room_instance_id)
             advancing = state["break"] or (state["focus"] and not state["paused"])
             if advancing:
                 previous_slot = state["last_tick_slot"]
@@ -115,6 +121,7 @@ class RoomTickScheduler:
                     room_id,
                     lease,
                     expected_revision,
+                    room_instance_id,
                     state,
                     self.lock_seconds,
                 )
@@ -131,7 +138,11 @@ class RoomTickScheduler:
 
         if not needs_broadcast or state is None:
             return True
-        await self.connections.broadcast_json(room_id, {"type": "state", "data": state})
+        await self.connections.broadcast_json(
+            room_id,
+            {"type": "state", "data": state},
+            expected_instance_id=room_instance_id,
+        )
         if self.publisher is not None:
             await self.publisher.publish_state(room_id, state)
         return True

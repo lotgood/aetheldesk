@@ -1277,8 +1277,8 @@ export function createForestScene() {
     setViewportAspect(aspect) {
       const safeAspect = Math.max(0.35, Math.min(3, aspect));
       const mobileBlend = 1 - sstep(0.8, 1.0, safeAspect);
-      // Portrait's time panel owns the lower-left and the stacked music bar
-      // can cover a shallow fire. Move the camp toward the open lower-right
+      // Portrait's time panel owns the lower-left while the bottom dock and
+      // recovery panel occupy the centre. Move the camp toward the open lower-right
       // clearing and slightly back only on narrow screens.
       fireGroup.position.x = THREE.MathUtils.lerp(-13.5, 7, mobileBlend);
       fireGroup.position.z = THREE.MathUtils.lerp(-6, -20, mobileBlend);

@@ -28,6 +28,7 @@ class FakeRedis:
         self.fail_get = False
         self.fail_set = False
         self.recreate_on_prune: tuple[str, str] | None = None
+        self.eval_calls: list[tuple[str, int]] = []
 
     async def get(self, name: str) -> str | None:
         if self.fail_get:
@@ -93,12 +94,16 @@ class FakeRedis:
         return next_value
 
     async def eval(self, script: str, numkeys: int, *keys_and_args: object) -> object:
-        if numkeys == 4 and "AETHEL_CREATE_ROOM" in script:
+        self.eval_calls.append((script, numkeys))
+        if self.fail_set:
+            raise ConnectionError("down")
+        if numkeys == 5 and "AETHEL_CREATE_ROOM" in script:
             (
                 index_key,
                 state_key,
                 metadata_key,
                 token_index_key,
+                tick_lock_key,
                 room_id,
                 encoded_state,
                 encoded_metadata,
@@ -112,6 +117,8 @@ class FakeRedis:
             if len(rooms) >= int(max_rooms):
                 return -2
             self.sets.pop(token_index_key, None)
+            self.values.pop(tick_lock_key, None)
+            self.ttls.pop(tick_lock_key, None)
             self.values[state_key] = encoded_state
             self.values[metadata_key] = encoded_metadata
             self.ttls[state_key] = int(ttl)
@@ -157,7 +164,35 @@ class FakeRedis:
             self.ttls[metadata_key] = int(ttl)
             self.ttls[token_index_key] = int(ttl)
             return 1
-        if numkeys == 3 and "EXPIRE" in script:
+        if numkeys == 2 and "AETHEL_GET_ROOM_SNAPSHOT" in script:
+            state_key, metadata_key = (str(value) for value in keys_and_args)
+            encoded_state = self.values.get(state_key)
+            encoded_metadata = self.values.get(metadata_key)
+            if encoded_state is None or encoded_metadata is None:
+                return None
+            room_instance_id = json.loads(encoded_metadata).get("room_instance_id")
+            if not isinstance(room_instance_id, str) or not room_instance_id:
+                return None
+            return [encoded_state, room_instance_id]
+        if numkeys == 3 and "AETHEL_COMPARE_AND_SET_STATE" in script:
+            state_key, metadata_key, token_index_key, expected_revision, expected_instance_id, encoded_state, ttl = (
+                str(value) for value in keys_and_args
+            )
+            current_state = self.values.get(state_key)
+            encoded_metadata = self.values.get(metadata_key)
+            if current_state is None or encoded_metadata is None:
+                return -1
+            if json.loads(encoded_metadata).get("room_instance_id") != expected_instance_id:
+                return -1
+            if int(json.loads(current_state).get("revision", 0)) != int(expected_revision):
+                return 0
+            self.values[state_key] = encoded_state
+            self.ttls[state_key] = int(ttl)
+            self.ttls[metadata_key] = int(ttl)
+            if token_index_key in self.sets:
+                self.ttls[token_index_key] = int(ttl)
+            return 1
+        if numkeys == 3 and "AETHEL_REFRESH_ROOM_TTL" in script:
             state_key, metadata_key, token_index_key, ttl = (str(value) for value in keys_and_args)
             if state_key not in self.values or metadata_key not in self.values:
                 return 0
@@ -186,16 +221,6 @@ class FakeRedis:
             tokens.add(token_hash)
             self.ttls[token_index_key] = int(ttl)
             return 1
-        if numkeys == 1 and "cjson.decode" in script:
-            state_key, expected_revision, encoded_state, state_ttl = (str(value) for value in keys_and_args)
-            current_state = self.values.get(state_key)
-            if current_state is None:
-                return 0
-            if int(json.loads(current_state).get("revision", 0)) != int(expected_revision):
-                return 0
-            self.values[state_key] = encoded_state
-            self.ttls[state_key] = int(state_ttl)
-            return 1
         raise AssertionError(f"unexpected eval arguments: {keys_and_args!r}")
 
 
@@ -218,7 +243,11 @@ def test_room_state_round_trips_as_json_and_sets_default_ttl():
 
         assert saved == state
         assert loaded == state
-        assert metadata == {"owner": "test"}
+        assert metadata is not None
+        assert metadata["owner"] == "test"
+        assert metadata["room_id"] == "ROOM-A"
+        assert isinstance(metadata["room_instance_id"], str)
+        assert metadata["room_instance_id"]
         assert json.loads(redis.values[redis_contract.room_state_key("ROOM-A")]) == state
         assert redis.ttls[redis_contract.room_state_key("ROOM-A")] == 300
         assert redis.ttls[redis_contract.room_metadata_key("ROOM-A")] == 300
@@ -237,7 +266,9 @@ def test_legacy_redis_snapshot_normalizes_before_revision_cas():
     legacy.pop("last_tick_slot")
     legacy["music"] = {"playing": True, "video_id": "legacy"}
     redis.values[redis_contract.room_state_key("LEGACY")] = json.dumps(legacy)
-    redis.values[redis_contract.room_metadata_key("LEGACY")] = json.dumps({"room_id": "LEGACY"})
+    redis.values[redis_contract.room_metadata_key("LEGACY")] = json.dumps(
+        {"room_id": "LEGACY", "room_instance_id": "legacy-instance"}
+    )
     redis.sets[ROOM_INDEX_KEY] = {"LEGACY"}
 
     async def run() -> None:
@@ -249,7 +280,7 @@ def test_legacy_redis_snapshot_normalizes_before_revision_cas():
         assert "music" not in loaded
         loaded["paused"] = True
         loaded["revision"] = 1
-        assert await store.compare_and_set_state("legacy", 0, loaded) is True
+        assert await store.compare_and_set_state("legacy", 0, "legacy-instance", loaded) is True
 
     asyncio.run(run())
 
@@ -278,6 +309,93 @@ def test_update_state_and_refresh_ttl_use_contract_keys():
         assert redis.ttls[redis_contract.room_state_key("ABC")] == 300
         assert redis.ttls[redis_contract.room_metadata_key("ABC")] == 300
         assert redis.ttls[redis_contract.room_token_index_key("ABC")] == 300
+
+    asyncio.run(run())
+
+
+def test_revision_cas_atomically_fences_generation_and_refreshes_all_room_ttls():
+    redis = FakeRedis()
+    store = RoomStore(redis, ttl_seconds=300)
+
+    async def run() -> None:
+        await store.create_room(
+            "atomic",
+            sample_state(),
+            metadata={"room_id": "ATOMIC", "room_instance_id": "generation-a"},
+        )
+        await store.set_token_lookup("atomic", "token-a")
+        state_key = redis_contract.room_state_key("ATOMIC")
+        metadata_key = redis_contract.room_metadata_key("ATOMIC")
+        token_key = redis_contract.room_token_index_key("ATOMIC")
+        redis.ttls[state_key] = 1
+        redis.ttls[metadata_key] = 1
+        redis.ttls[token_key] = 1
+
+        snapshot = await store.get_room_snapshot("atomic")
+        assert snapshot is not None
+        state, room_instance_id = snapshot
+        state["paused"] = True
+        state["revision"] = 1
+        calls_before = len(redis.eval_calls)
+        assert await store.compare_and_set_state("atomic", 0, room_instance_id, state) is True
+
+        cas_calls = redis.eval_calls[calls_before:]
+        assert len(cas_calls) == 1
+        assert "AETHEL_COMPARE_AND_SET_STATE" in cas_calls[0][0]
+        assert redis.ttls[state_key] == 300
+        assert redis.ttls[metadata_key] == 300
+        assert redis.ttls[token_key] == 300
+
+        redis.values.pop(metadata_key)
+        rejected = dict(state)
+        rejected["paused"] = False
+        rejected["revision"] = 2
+        with pytest.raises(RoomGenerationChanged):
+            await store.compare_and_set_state(
+                "atomic",
+                1,
+                room_instance_id,
+                cast(BackendState, rejected),
+            )
+        assert json.loads(redis.values[state_key])["paused"] is True
+
+    asyncio.run(run())
+
+
+def test_same_room_id_recreation_rejects_old_generation_cas_and_clears_tick_lease():
+    redis = FakeRedis()
+    store = RoomStore(redis)
+
+    async def run() -> None:
+        await store.create_room(
+            "reborn",
+            sample_state(),
+            metadata={"room_id": "REBORN", "room_instance_id": "old-generation"},
+        )
+        old_snapshot = await store.get_room_snapshot("reborn")
+        assert old_snapshot is not None
+        old_state, old_instance_id = old_snapshot
+        old_state["paused"] = True
+        old_state["revision"] = 1
+        tick_lock_key = redis_contract.room_tick_lock_key("REBORN")
+        redis.values[tick_lock_key] = "1|running|old-worker|old-nonce"
+        redis.ttls[tick_lock_key] = 2
+
+        assert await store.expire_empty_room("reborn", has_connections=False) is True
+        await store.create_room(
+            "reborn",
+            sample_state(),
+            metadata={"room_id": "REBORN", "room_instance_id": "new-generation"},
+        )
+
+        assert tick_lock_key not in redis.values
+        with pytest.raises(RoomGenerationChanged):
+            await store.compare_and_set_state("reborn", 0, old_instance_id, old_state)
+        current = await store.get_room_snapshot("reborn")
+        assert current is not None
+        assert current[1] == "new-generation"
+        assert current[0]["paused"] is False
+        assert current[0]["revision"] == 0
 
     asyncio.run(run())
 

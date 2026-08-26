@@ -69,16 +69,22 @@ return 1
 
 
 _COMMIT_TICK_STATE_SCRIPT = """
+-- AETHEL_COMMIT_TICK_STATE
 local current = redis.call('GET', KEYS[1])
 if current ~= ARGV[1] then
   return 0
 end
 
 local encoded_state = redis.call('GET', KEYS[2])
-if not encoded_state then
-  return 0
+local encoded_metadata = redis.call('GET', KEYS[3])
+if not encoded_state or not encoded_metadata then
+  return -1
 end
 local decoded_state = cjson.decode(encoded_state)
+local decoded_metadata = cjson.decode(encoded_metadata)
+if decoded_metadata['room_instance_id'] ~= ARGV[3] then
+  return -1
+end
 local current_revision = tonumber(decoded_state['revision'] or 0)
 if current_revision ~= tonumber(ARGV[2]) then
   return 0
@@ -89,24 +95,54 @@ if not slot then
   return 0
 end
 
-redis.call('SET', KEYS[2], ARGV[3], 'EX', tonumber(ARGV[4]))
-redis.call('SET', KEYS[1], slot .. '|done', 'EX', tonumber(ARGV[5]))
+redis.call('SET', KEYS[2], ARGV[4], 'EX', tonumber(ARGV[5]))
+redis.call('EXPIRE', KEYS[3], tonumber(ARGV[5]))
+if redis.call('EXISTS', KEYS[4]) == 1 then
+  redis.call('EXPIRE', KEYS[4], tonumber(ARGV[5]))
+end
+redis.call('SET', KEYS[1], slot .. '|done', 'EX', tonumber(ARGV[6]))
 return 1
 """
 
 
 _COMPARE_AND_SET_STATE_SCRIPT = """
+-- AETHEL_COMPARE_AND_SET_STATE
 local encoded_state = redis.call('GET', KEYS[1])
-if not encoded_state then
-  return 0
+local encoded_metadata = redis.call('GET', KEYS[2])
+if not encoded_state or not encoded_metadata then
+  return -1
 end
 local decoded_state = cjson.decode(encoded_state)
+local decoded_metadata = cjson.decode(encoded_metadata)
+if decoded_metadata['room_instance_id'] ~= ARGV[2] then
+  return -1
+end
 local current_revision = tonumber(decoded_state['revision'] or 0)
 if current_revision ~= tonumber(ARGV[1]) then
   return 0
 end
-redis.call('SET', KEYS[1], ARGV[2], 'EX', tonumber(ARGV[3]))
+redis.call('SET', KEYS[1], ARGV[3], 'EX', tonumber(ARGV[4]))
+redis.call('EXPIRE', KEYS[2], tonumber(ARGV[4]))
+if redis.call('EXISTS', KEYS[3]) == 1 then
+  redis.call('EXPIRE', KEYS[3], tonumber(ARGV[4]))
+end
 return 1
+"""
+
+
+_GET_ROOM_SNAPSHOT_SCRIPT = """
+-- AETHEL_GET_ROOM_SNAPSHOT
+local encoded_state = redis.call('GET', KEYS[1])
+local encoded_metadata = redis.call('GET', KEYS[2])
+if not encoded_state or not encoded_metadata then
+  return nil
+end
+local decoded_metadata = cjson.decode(encoded_metadata)
+local room_instance_id = decoded_metadata['room_instance_id']
+if type(room_instance_id) ~= 'string' or room_instance_id == '' then
+  return nil
+end
+return {encoded_state, room_instance_id}
 """
 
 
@@ -140,6 +176,7 @@ return 1
 
 
 _REFRESH_ROOM_TTL_SCRIPT = """
+-- AETHEL_REFRESH_ROOM_TTL
 if redis.call('EXISTS', KEYS[1]) == 0 or redis.call('EXISTS', KEYS[2]) == 0 then
   return 0
 end
@@ -162,6 +199,7 @@ if redis.call('SCARD', KEYS[1]) >= tonumber(ARGV[5]) then
   return -2
 end
 redis.call('DEL', KEYS[4])
+redis.call('DEL', KEYS[5])
 redis.call('SET', KEYS[2], ARGV[2], 'EX', tonumber(ARGV[4]))
 redis.call('SET', KEYS[3], ARGV[3], 'EX', tonumber(ARGV[4]))
 redis.call('SADD', KEYS[1], ARGV[1])
@@ -322,18 +360,22 @@ class RoomStore:
         # decision. The Lua transaction then serializes all concurrent creates.
         _ = await self.room_count()
         encoded_state = _json_dumps(state)
-        encoded_metadata = _json_dumps(metadata or self._default_metadata(normalized))
+        canonical_metadata = self._default_metadata(normalized)
+        if metadata is not None:
+            canonical_metadata.update(metadata)
+        encoded_metadata = _json_dumps(canonical_metadata)
         result = int(
             cast(
                 int,
                 await _redis_call(
                     lambda: cast(Any, self.redis).eval(
                         _CREATE_ROOM_SCRIPT,
-                        4,
+                        5,
                         ROOM_INDEX_KEY,
                         room_state_key(normalized),
                         room_metadata_key(normalized),
                         room_token_index_key(normalized),
+                        room_tick_lock_key(normalized),
                         normalized,
                         encoded_state,
                         encoded_metadata,
@@ -370,24 +412,53 @@ class RoomStore:
             return None
         return normalize_state(cast(dict[str, object], json.loads(encoded)))
 
-    async def set_state(self, room_id: str, state: BackendState) -> None:
-        _ = await self._set_state(room_id, state)
-        await self.refresh_ttl(room_id)
+    async def get_room_snapshot(self, room_id: str) -> tuple[BackendState, str] | None:
+        normalized = normalize_room_id(room_id)
+        snapshot = cast(
+            Any,
+            await _redis_call(
+                lambda: cast(Any, self.redis).eval(
+                    _GET_ROOM_SNAPSHOT_SCRIPT,
+                    2,
+                    room_state_key(normalized),
+                    room_metadata_key(normalized),
+                )
+            ),
+        )
+        if not isinstance(snapshot, (list, tuple)) or len(snapshot) != 2:
+            return None
+        encoded_state = _decode_text(snapshot[0])
+        room_instance_id = _decode_text(snapshot[1])
+        if encoded_state is None or room_instance_id is None or not room_instance_id:
+            return None
+        state = normalize_state(cast(dict[str, object], json.loads(encoded_state)))
+        return state, room_instance_id
 
-    async def _set_state(self, room_id: str, state: BackendState, *, nx: bool = False) -> bool:
-        encoded = _json_dumps(state)
-        result = await _redis_call(lambda: self.redis.set(room_state_key(room_id), encoded, ex=self.ttl_seconds, nx=nx))
-        return bool(result)
+    async def set_state(self, room_id: str, state: BackendState) -> None:
+        for _attempt in range(8):
+            snapshot = await self.get_room_snapshot(room_id)
+            if snapshot is None:
+                raise RoomGenerationChanged("room generation is unavailable")
+            current_state, room_instance_id = snapshot
+            if await self.compare_and_set_state(
+                room_id,
+                current_state["revision"],
+                room_instance_id,
+                state,
+            ):
+                return
+        raise StateConflict("room state changed too frequently")
 
     async def update_state(self, room_id: str, updater: Callable[[BackendState], None]) -> BackendState | None:
         for _attempt in range(8):
-            state = await self.get_state(room_id)
-            if state is None:
+            snapshot = await self.get_room_snapshot(room_id)
+            if snapshot is None:
                 return None
+            state, room_instance_id = snapshot
             expected_revision = state["revision"]
             updater(state)
             state["revision"] = expected_revision + 1
-            if await self.compare_and_set_state(room_id, expected_revision, state):
+            if await self.compare_and_set_state(room_id, expected_revision, room_instance_id, state):
                 return state
         raise StateConflict("room state changed too frequently")
 
@@ -395,22 +466,28 @@ class RoomStore:
         self,
         room_id: str,
         expected_revision: int,
+        expected_instance_id: str,
         state: BackendState,
     ) -> bool:
         normalized = normalize_room_id(room_id)
         committed = await _redis_call(
             lambda: cast(Any, self.redis).eval(
                 _COMPARE_AND_SET_STATE_SCRIPT,
-                1,
+                3,
                 room_state_key(normalized),
+                room_metadata_key(normalized),
+                room_token_index_key(normalized),
                 expected_revision,
+                expected_instance_id,
                 _json_dumps(state),
                 self.ttl_seconds,
             )
         )
-        if not committed:
+        result = int(cast(int, committed))
+        if result == -1:
+            raise RoomGenerationChanged("room generation changed during state commit")
+        if result != 1:
             return False
-        await self.refresh_ttl(normalized)
         return True
 
     async def get_metadata(self, room_id: str) -> dict[str, object] | None:
@@ -698,6 +775,7 @@ class RoomStore:
         room_id: str,
         lease: str,
         expected_revision: int,
+        expected_instance_id: str,
         state: BackendState,
         lock_seconds: int = config.ROOM_TICK_LOCK_SECONDS,
     ) -> bool:
@@ -705,24 +783,30 @@ class RoomStore:
         committed = await _redis_call(
             lambda: cast(Any, self.redis).eval(
                 _COMMIT_TICK_STATE_SCRIPT,
-                2,
+                4,
                 room_tick_lock_key(normalized),
                 room_state_key(normalized),
+                room_metadata_key(normalized),
+                room_token_index_key(normalized),
                 lease,
                 expected_revision,
+                expected_instance_id,
                 _json_dumps(state),
                 self.ttl_seconds,
                 max(1, lock_seconds),
             )
         )
-        if not committed:
+        result = int(cast(int, committed))
+        if result == -1:
+            raise RoomGenerationChanged("room generation changed during tick commit")
+        if result != 1:
             return False
-        await self.refresh_ttl(normalized)
         return True
 
     def _default_metadata(self, room_id: str) -> dict[str, object]:
         return {
             "room_id": normalize_room_id(room_id),
+            "room_instance_id": uuid.uuid4().hex,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
 

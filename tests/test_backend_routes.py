@@ -99,12 +99,13 @@ class FakeRedis:
         return next_value
 
     async def eval(self, script: str, numkeys: int, *keys_and_args: object) -> object:
-        if numkeys == 4 and "AETHEL_CREATE_ROOM" in script:
+        if numkeys == 5 and "AETHEL_CREATE_ROOM" in script:
             (
                 index_key,
                 state_key,
                 metadata_key,
                 token_index_key,
+                tick_lock_key,
                 room_id,
                 encoded_state,
                 encoded_metadata,
@@ -118,6 +119,8 @@ class FakeRedis:
             if len(rooms) >= int(max_rooms):
                 return -2
             self.sets.pop(token_index_key, None)
+            self.values.pop(tick_lock_key, None)
+            self.ttls.pop(tick_lock_key, None)
             self.values[state_key] = encoded_state
             self.values[metadata_key] = encoded_metadata
             self.ttls[state_key] = int(ttl)
@@ -179,6 +182,7 @@ def api_client(monkeypatch: pytest.MonkeyPatch) -> Generator[tuple[TestClient, F
     monkeypatch.setattr(backend_main, "local_token_hashes", {})
     monkeypatch.setattr(backend_main, "local_room_instance_ids", {})
     monkeypatch.setattr(backend_main, "event_subscription_tasks", {})
+    monkeypatch.setattr(backend_main, "event_subscription_ready", {})
     with TestClient(backend_main.app) as client:
         yield client, redis
 

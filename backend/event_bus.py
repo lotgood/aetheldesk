@@ -1,10 +1,12 @@
 import inspect
 import json
+from asyncio import CancelledError, Future
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any, Protocol, TypeVar, cast
 
 from backend import redis_contract
 from backend.connection_manager import LocalConnectionManager
+from backend.room_store import RedisUnavailable
 from backend.state import BACKEND_STATE_KEYS, BackendState
 
 
@@ -23,12 +25,32 @@ class RedisPubSub(Protocol):
 
 
 StateLoader = Callable[[str], Awaitable[BackendState | None]]
+SnapshotLoader = Callable[[str], Awaitable[tuple[BackendState, str] | None]]
 
 
 async def _resolve(value: T) -> T:
     if inspect.isawaitable(value):
         return await cast(Any, value)
     return value
+
+
+def _is_redis_outage(exc: BaseException) -> bool:
+    if isinstance(exc, (ConnectionError, OSError, TimeoutError)):
+        return True
+    return exc.__class__.__module__.startswith("redis") and exc.__class__.__name__ in {
+        "BusyLoadingError",
+        "ConnectionError",
+        "TimeoutError",
+    }
+
+
+async def _redis_call(operation: Callable[[], T]) -> T:
+    try:
+        return await _resolve(operation())
+    except Exception as exc:
+        if _is_redis_outage(exc):
+            raise RedisUnavailable("Redis event transport is unavailable") from exc
+        raise
 
 
 class RedisStateEventBus:
@@ -39,12 +61,14 @@ class RedisStateEventBus:
         worker_id: str,
         connections: LocalConnectionManager,
         load_canonical_state: StateLoader | None = None,
+        load_canonical_snapshot: SnapshotLoader | None = None,
         recent_event_limit: int = 256,
     ) -> None:
         self.redis = redis
         self.worker_id = worker_id
         self.connections = connections
         self.load_canonical_state = load_canonical_state
+        self.load_canonical_snapshot = load_canonical_snapshot
         self.recent_event_limit = recent_event_limit
         self._recent_event_ids: dict[str, list[str]] = {}
 
@@ -57,9 +81,10 @@ class RedisStateEventBus:
             data=state,
         )
         self._remember_event(normalized, str(envelope["event_id"]))
-        await _resolve(
-            self.redis.publish(
-                redis_contract.room_events_channel(normalized), json.dumps(envelope, separators=(",", ":"))
+        await _redis_call(
+            lambda: self.redis.publish(
+                redis_contract.room_events_channel(normalized),
+                json.dumps(envelope, separators=(",", ":")),
             )
         )
         return envelope
@@ -79,7 +104,13 @@ class RedisStateEventBus:
         self._remember_event(room_id, event_id)
 
         state = cast(BackendState | None, envelope.get("data"))
-        if self.load_canonical_state is not None:
+        room_instance_id: str | None = None
+        if self.load_canonical_snapshot is not None:
+            snapshot = await self.load_canonical_snapshot(room_id)
+            if snapshot is None:
+                return False
+            state, room_instance_id = snapshot
+        elif self.load_canonical_state is not None:
             canonical = await self.load_canonical_state(room_id)
             if canonical is not None:
                 state = canonical
@@ -87,32 +118,62 @@ class RedisStateEventBus:
         if state is None:
             return False
 
-        await self.connections.broadcast_json(room_id, {"type": "state", "data": state})
+        await self.connections.broadcast_json(
+            room_id,
+            {"type": "state", "data": state},
+            expected_instance_id=room_instance_id,
+        )
         return True
 
     async def sync_room_from_store(self, room_id: str) -> bool:
-        if self.load_canonical_state is None:
-            return False
         normalized = redis_contract.normalize_room_id(room_id)
-        state = await self.load_canonical_state(normalized)
+        room_instance_id: str | None = None
+        if self.load_canonical_snapshot is not None:
+            snapshot = await self.load_canonical_snapshot(normalized)
+            if snapshot is None:
+                return False
+            state, room_instance_id = snapshot
+        elif self.load_canonical_state is not None:
+            state = await self.load_canonical_state(normalized)
+        else:
+            return False
         if state is None:
             return False
-        await self.connections.broadcast_json(normalized, {"type": "state", "data": state})
+        await self.connections.broadcast_json(
+            normalized,
+            {"type": "state", "data": state},
+            expected_instance_id=room_instance_id,
+        )
         return True
 
-    async def consume_room_events(self, room_id: str) -> None:
+    async def consume_room_events(self, room_id: str, ready: Future[None] | None = None) -> None:
         normalized = redis_contract.normalize_room_id(room_id)
-        pubsub = self.redis.pubsub()
-        await _resolve(pubsub.subscribe(redis_contract.room_events_channel(normalized)))
+        pubsub: RedisPubSub | None = None
         try:
+            pubsub = await _redis_call(self.redis.pubsub)
+            await _redis_call(lambda: pubsub.subscribe(redis_contract.room_events_channel(normalized)))
+            if ready is not None and not ready.done():
+                ready.set_result(None)
             async for message in pubsub.listen():
                 if not isinstance(message, dict) or message.get("type") != "message":
                     continue
                 await self.dispatch_message(message.get("data"))
+        except CancelledError:
+            if ready is not None and not ready.done():
+                ready.cancel()
+            raise
+        except Exception as exc:
+            normalized_exc = RedisUnavailable("Redis event transport is unavailable") if _is_redis_outage(exc) else exc
+            if ready is not None and not ready.done():
+                ready.set_exception(normalized_exc)
+            if normalized_exc is exc:
+                raise
+            raise normalized_exc from exc
         finally:
-            close = getattr(pubsub, "aclose", None) or getattr(pubsub, "close", None)
-            if close is not None:
-                await _resolve(close())
+            if pubsub is not None:
+                close = getattr(pubsub, "aclose", None) or getattr(pubsub, "close", None)
+                if close is not None:
+                    await _redis_call(close)
 
     def _accepts_envelope(self, envelope: dict[str, object]) -> bool:
         if envelope.get("version") != redis_contract.EVENT_VERSION:
